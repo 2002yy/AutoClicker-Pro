@@ -1,8 +1,6 @@
-# -1.0-
-[个人开发/免费]
-
-一款基于 Python 和 CustomTkinter 开发的现代化 Windows 连点器。 支持鼠标连点、键盘连点、宏录制与回放，拥有美观的 Win11 风格界面
 # 🖱️ AutoClicker Pro (全能连点器)
+
+[个人开发/免费]
 
 ![Python](https://img.shields.io/badge/Python-3.10%2B-blue)
 ![Platform](https://img.shields.io/badge/Platform-Windows-win)
@@ -35,7 +33,7 @@
 ## 🛠️ 安装与使用 (Installation)
 
 ### 方式一：直接下载 (推荐)
-前往 [Releases 页面](https://github.com/你的用户名/你的仓库名/releases) 下载最新的 `.exe` 文件，双击即可运行。
+前往 [Releases 页面](https://github.com/2002yy/AutoClicker-Pro/releases) 下载最新的 `.exe` 文件，双击即可运行。
 
 ### 方式二：源码运行
 如果你想修改代码或二次开发，请按以下步骤操作：
@@ -54,7 +52,7 @@ pip install customtkinter pynput
 ## 运行程序
 
 ```bash
-python 连点器1.0.py
+python autoclicker.py
 ```
 📖 快捷键说明
 
