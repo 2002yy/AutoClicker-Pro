@@ -45,7 +45,7 @@
 在终端中执行以下命令安装所需库：
 
 ```bash
-pip install customtkinter pynput
+pip install -r requirements.txt
 ```
 💡 建议在虚拟环境中运行，避免污染全局 Python 环境。
 
@@ -87,7 +87,3 @@ python pack.py
 使用本软件所引发的任何后果（如账号封禁等），作者概不负责。
 🤝 贡献与反馈
 欢迎提交 Issue 或 Pull Request！
-
-如有建议或问题，请随时联系作者。
-
-📧 邮箱：969670106@qq.com
