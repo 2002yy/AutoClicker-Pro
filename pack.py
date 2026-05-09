@@ -6,7 +6,7 @@ import subprocess
 # 这里填你的源文件名 (必须带 .py)
 SOURCE_FILE = "autoclicker.py"
 # 这里填你想生成的 exe 名字
-EXE_NAME = "连点器Pro_最终版"
+EXE_NAME = "AutoClickerPro"
 # ===========================================
 
 
@@ -27,7 +27,7 @@ def build():
     if not os.path.exists(SOURCE_FILE):
         print(f"\n❌ 错误：找不到文件 [{SOURCE_FILE}]")
         print(
-            "请确认：\n1. 你的源文件名字真的是 '连点器1.0.py' 吗？\n2. 此脚本是否和源文件在同一个文件夹里？"
+            "请确认：\n1. 你的源文件名真的是 'autoclicker.py' 吗？\n2. 此脚本是否和源文件在同一个文件夹里？"
         )
         return
 
