@@ -1,4 +1,3 @@
-```
 # Compiled and build artifacts
 *.pyc
 __pycache__/
@@ -10,6 +9,7 @@ __pycache__/
 *.so
 *.a
 *.out
+*.spec
 
 # Dependencies
 node_modules/
@@ -26,12 +26,9 @@ target/
 .gradle/
 
 # Python specific
-*.pyc
-__pycache__/
 *.pyo
 *.pyd
 .Python
-*.so
 .Pytest_cache/
 .mypy_cache/
 .coverage
@@ -45,8 +42,9 @@ __pycache__/
 # Editors
 .vscode/
 .idea/
-*.swp
-*.swo
+
+# Claude Code
+.claude/
 
 # OS generated files
 .DS_Store
@@ -55,7 +53,6 @@ Thumbs.db
 # Coverage reports
 coverage/
 htmlcov/
-*.coverage
 
 # Compressed files
 *.zip
@@ -80,4 +77,3 @@ htmlcov/
 *.tar.bz2
 *.tar.xz
 *.tar.zst
-```

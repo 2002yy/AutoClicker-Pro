@@ -35,7 +35,7 @@ git push origin main --tags
 
 ### 查看结果
 
-1. 访问 https://github.com/你的用户名/你的仓库/releases
+1. 访问 https://github.com/2002yy/AutoClicker-Pro/releases
 2. 找到最新版本的 Release
 3. 下载对应系统的安装包
 
