@@ -19,11 +19,17 @@ class ControlButtons(ttk.Frame):
     
     def __init__(self, parent):
         super().__init__(parent, padding=PADDING_STANDARD)
-        
+
         # 按钮状态
         self._is_recording = False
         self._is_clicking = False
-        
+
+        # 初始化默认回调（会在 set_*_callback 中被覆盖）
+        self._on_record_click = lambda: None
+        self._on_click_click = lambda: None
+        self._on_save_click = lambda: None
+        self._on_load_click = lambda: None
+
         # 创建按钮
         self._create_buttons()
     

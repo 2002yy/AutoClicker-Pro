@@ -212,7 +212,7 @@ class MacroStorage:
                 first_bytes = f.read(10)
             
             # 简单的加密检测：加密数据通常包含特殊字符
-            is_encrypted = any(b > 127 or b < 32 for b in first_bytes if b != ord('\n'))
+            is_encrypted = any(b > 127 or b < 32 for b in first_bytes if b not in (ord('\n'), ord('\r')))
             
             if is_encrypted:
                 raise ValueError("该宏文件已加密，需要提供密码")
