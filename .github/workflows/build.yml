@@ -1,0 +1,174 @@
+name: Build and Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version tag (e.g., v1.0.0)'
+        required: true
+        default: 'v1.0.0'
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.11'
+        
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        pip install pyinstaller
+        
+    - name: Build Windows executable
+      run: |
+        pyinstaller --onefile --name "AutoClickerPro" --icon=NONE --add-data "config;config" --add-data "core;core" --add-data "ui;ui" --add-data "utils;utils" main.py
+      shell: pwsh
+      
+    - name: Create Windows release package
+      run: |
+        New-Item -ItemType Directory -Force -Path release
+        Copy-Item dist\AutoClickerPro.exe release\
+        Copy-Item README.md release\
+        Copy-Item LICENSE release\ 2>$null || echo "No LICENSE file"
+        Compress-Archive -Path release\* -DestinationPath AutoClickerPro_Windows.zip -Force
+      shell: pwsh
+      
+    - name: Upload Windows artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: windows-build
+        path: AutoClickerPro_Windows.zip
+        
+  build-linux:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.11'
+        
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        pip install pyinstaller
+        
+    - name: Build Linux executable
+      run: |
+        pyinstaller --onefile --name "AutoClickerPro" --icon=NONE --add-data "config:config" --add-data "core:core" --add-data "ui:ui" --add-data "utils:utils" main.py
+        
+    - name: Create Linux release package
+      run: |
+        mkdir -p release
+        cp dist/AutoClickerPro release/
+        cp README.md release/
+        cp LICENSE release/ 2>/dev/null || echo "No LICENSE file"
+        cd release && tar -czvf ../AutoClickerPro_Linux.tar.gz *
+        
+    - name: Upload Linux artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: linux-build
+        path: AutoClickerPro_Linux.tar.gz
+        
+  create-release:
+    needs: [build-windows, build-linux]
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'
+    
+    steps:
+    - name: Download Windows artifact
+      uses: actions/download-artifact@v4
+      with:
+        name: windows-build
+        path: ./artifacts
+        
+    - name: Download Linux artifact
+      uses: actions/download-artifact@v4
+      with:
+        name: linux-build
+        path: ./artifacts
+        
+    - name: Get version from tag or input
+      id: get_version
+      run: |
+        if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+          VERSION="${{ github.event.inputs.version }}"
+        else
+          VERSION="${{ github.ref_name }}"
+        fi
+        echo "version=$VERSION" >> $GITHUB_OUTPUT
+        
+    - name: Generate changelog
+      id: changelog
+      run: |
+        cat > changelog.md << 'EOF'
+## 🎉 自动点击器专业版 ${{ steps.get_version.outputs.version }}
+
+### ✨ 新特性
+- 🔐 **加密存储**: 宏录制文件采用 Fernet 对称加密，安全保护您的操作序列
+- 🧩 **模块化架构**: UI 与业务逻辑完全解耦，代码更易维护
+- ⚡ **高性能**: 优化的线程管理，低延迟响应
+- 🛡️ **安全防护**: 完整的输入验证和防滥用机制
+- 🎨 **现代化界面**: 简洁直观的用户体验
+
+### 🔧 技术改进
+- 分离配置文件 (constants/encryption/validation)
+- 新增宏管理模块 (macros.py)
+- 快捷键管理器 (hotkey_manager.py)
+- 完整的单元测试覆盖 (36+ 测试用例)
+- CI/CD 自动化构建
+
+### 📦 安装说明
+#### Windows
+1. 下载 `AutoClickerPro_Windows.zip`
+2. 解压到任意目录
+3. 双击运行 `AutoClickerPro.exe`
+
+#### Linux
+1. 下载 `AutoClickerPro_Linux.tar.gz`
+2. 解压：`tar -xzvf AutoClickerPro_Linux.tar.gz`
+3. 运行：`./AutoClickerPro`
+
+### ⌨️ 快捷键
+- `F8`: 开始/停止连点
+- `F9`: 开始/停止录制
+- `F10`: 播放宏
+- `ESC`: 停止当前操作
+
+### 📝 更新日志
+- 首次正式发布
+- 支持鼠标连点和键盘宏录制
+- 加密存储保护隐私
+- 跨平台支持 (Windows/Linux)
+EOF
+        cat changelog.md
+        
+    - name: Create Release
+      uses: softprops/action-gh-release@v1
+      with:
+        name: 自动点击器专业版 ${{ steps.get_version.outputs.version }}
+        body_path: changelog.md
+        files: |
+          ./artifacts/AutoClickerPro_Windows.zip
+          ./artifacts/AutoClickerPro_Linux.tar.gz
+        draft: false
+        prerelease: false
+        generate_release_notes: true
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
