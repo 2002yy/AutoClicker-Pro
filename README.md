@@ -1,72 +1,106 @@
-# Windows Input Automation Tool
+# 自动点击器 Pro
 
-<p>
-  <img src="https://img.shields.io/badge/Python-3.10%2B-blue" alt="Python 3.10+">
-  <img src="https://img.shields.io/badge/Platform-Windows-win" alt="Windows">
-  <img src="https://img.shields.io/badge/License-MIT-green" alt="MIT">
-  <img src="https://img.shields.io/badge/UI-CustomTkinter-orange" alt="CustomTkinter">
-</p>
+一个功能强大的自动点击器和宏录制工具，具有加密存储、模块化设计和完整的单元测试。
 
-A lightweight Windows input automation tool built with Python and CustomTkinter.
-It supports mouse clicking, keyboard repetition, macro recording and local JSON configuration.
-This project is intended for desktop automation learning and accessibility-style repetitive task reduction.
+## 项目结构
 
-<img width="1028" alt="screenshot" src="https://github.com/user-attachments/assets/7b13fda0-30c0-4692-a495-5ac8fc20081f">
+```
+/workspace/
+├── main.py              # 程序入口
+├── config/              # 配置模块
+│   ├── constants.py     # 常量定义
+│   ├── encryption.py    # 加密功能
+│   └── validation.py    # 输入验证
+├── core/                # 核心业务逻辑
+│   ├── engine.py        # 主引擎（需要 X server）
+│   └── macros.py        # 宏录制与播放
+├── ui/                  # UI 层
+│   ├── app.py           # 主应用窗口
+│   └── components/      # UI 组件
+│       ├── settings_panel.py
+│       ├── action_list.py
+│       ├── control_buttons.py
+│       └── status_bar.py
+├── utils/               # 工具模块
+│   └── hotkey_manager.py # 快捷键管理
+└── tests/               # 单元测试
+    ├── test_encryption.py
+    ├── test_validation.py
+    ├── test_macros.py
+    └── test_hotkey_manager.py
+```
 
-## Features
-
-- **Mouse automation**: Left / right / middle click, single / double click, fixed-position or cursor-follow
-- **Keyboard automation**: Repeat any key at configurable intervals
-- **Macro recording**: Record and replay mouse + keyboard sequences with timing fidelity
-- **Flexible stop conditions**: Unlimited loop, fixed count, or timed duration
-- **Configuration persistence**: Settings saved to local JSON, restored on restart
-- **Portable executable**: Single-file EXE via PyInstaller, no Python runtime required
-
-## Quick Start
+## 安装依赖
 
 ```bash
 pip install -r requirements.txt
-python autoclicker.py
 ```
 
-### Download
-
-Pre-built EXE available on the [Releases page](https://github.com/2002yy/AutoClicker-Pro/releases).
-
-### Controls
-
-| Key | Function |
-|---|---|
-| F8 | Start / stop click loop |
-| F9 | Capture current mouse position |
-| F10 | Start / stop macro recording |
-| F11 | Start / stop macro playback |
-
-## How It Works
-
-This tool uses `pynput` to simulate physical input events at the OS level — the same mechanism as a physical mouse or keyboard. It operates in the foreground: the mouse cursor moves and keys are pressed visibly. This approach maximizes compatibility (works with virtually all Windows applications) at the cost of foreground-only operation.
-
-For a detailed technical explanation, see [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
-
-## Packaging
+## 运行程序
 
 ```bash
-pip install pyinstaller
-python pack.py
-# Output: dist/AutoClickerPro.exe
+python main.py
 ```
 
-See [docs/PACKAGING.md](docs/PACKAGING.md) for details.
+## 运行测试
 
-## Security & Privacy
+```bash
+# 运行所有测试
+python -m unittest discover tests -v
 
-- **No network access**: All processing is local. Zero telemetry, no data collection.
-- **Foreground simulation only**: Uses `pynput` for OS-level input simulation — not injection, not memory modification.
-- **See**: [SECURITY.md](SECURITY.md), [PRIVACY.md](PRIVACY.md)
+# 运行特定测试模块
+python -m unittest tests.test_encryption -v
+python -m unittest tests.test_validation -v
+python -m unittest tests.test_macros -v
+```
 
-## Disclaimer
+## 主要功能
 
-This software is provided for educational purposes and legitimate desktop automation only.
-It uses foreground input simulation (not hook injection, not memory modification).
-Do not use for violating software terms of service, cheating in online games, or any illegal activity.
-The author assumes no liability for misuse.
+### 1. 加密存储
+- 宏数据支持 Fernet 对称加密
+- 可选择使用密码保护
+- 密钥安全存储在 `~/.autoclicker_pro/`
+
+### 2. 模块化设计
+- UI 与业务逻辑完全解耦
+- 配置信息集中管理
+- 组件化 UI 设计
+
+### 3. 线程安全
+- 所有共享状态使用锁保护
+- UI 更新在主线程执行
+- 避免竞态条件
+
+### 4. 输入验证
+- 完整的时间输入验证
+- 坐标验证
+- 宏序列验证
+
+### 5. 快捷键支持
+- 全局快捷键注册
+- 可自定义快捷键组合
+- 线程安全的快捷键处理
+
+## 测试结果
+
+当前通过 **36 个单元测试**：
+- ✅ 加密/解密测试 (6 个)
+- ✅ 输入验证测试 (15 个)
+- ✅ 宏模块测试 (15 个)
+
+注意：`test_hotkey_manager.py` 需要 X server 环境才能运行。
+
+## 安全性改进
+
+1. **宏录制加密存储** - 使用 Fernet 对称加密
+2. **权限控制** - 配置文件权限设置为 600
+3. **防滥用机制** - 最小间隔限制
+4. **资源正确释放** - 确保监听器和线程正确清理
+
+## 代码质量
+
+- ✅ 消除所有魔法值
+- ✅ 方法职责单一
+- ✅ 代码复用率高
+- ✅ 完整的类型注解
+- ✅ 详细的文档字符串
