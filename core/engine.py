@@ -16,38 +16,7 @@ from config.constants import (
 )
 from config.encryption import encrypt_macro, decrypt_macro
 from config.validation import validate_time_inputs, validate_macro_sequence
-
-
-class ClickAction:
-    """表示一个点击动作"""
-    
-    def __init__(self, x: int, y: int, button: str, action_type: str, timestamp: float = 0):
-        self.x = x
-        self.y = y
-        self.button = button  # 'left', 'right', 'middle'
-        self.action_type = action_type  # 'press' 或 'release'
-        self.timestamp = timestamp  # 相对于序列开始的时间戳
-    
-    def to_dict(self) -> Dict[str, Any]:
-        """转换为字典"""
-        return {
-            'x': self.x,
-            'y': self.y,
-            'button': self.button,
-            'action_type': self.action_type,
-            'timestamp': self.timestamp
-        }
-    
-    @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> 'ClickAction':
-        """从字典创建"""
-        return cls(
-            x=data['x'],
-            y=data['y'],
-            button=data['button'],
-            action_type=data['action_type'],
-            timestamp=data.get('timestamp', 0)
-        )
+from core.macros import ClickAction
 
 
 class ClickerEngine:
@@ -119,6 +88,16 @@ class ClickerEngine:
             if repeat_interval is not None:
                 self.repeat_interval = repeat_interval
     
+    # ==================== 回调设置 ====================
+
+    def set_callbacks(self, on_status_change: Callable[[str], None] = None,
+                      on_recording_update: Callable[[List[ClickAction]], None] = None):
+        """设置回调函数"""
+        if on_status_change is not None:
+            self.on_status_change = on_status_change
+        if on_recording_update is not None:
+            self.on_recording_update = on_recording_update
+
     # ==================== 自动点击逻辑 ====================
     
     def start_clicking(self) -> bool:

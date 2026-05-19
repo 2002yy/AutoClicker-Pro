@@ -15,7 +15,7 @@ from config.constants import (
     PADDING_STANDARD, PADDING_LARGE,
     STATUS_READY
 )
-from core.engine import ClickerEngine, ClickAction
+from core.engine import ClickerEngine
 from ui.components import SettingsPanel, ActionList, ControlButtons, StatusBar
 
 
@@ -147,7 +147,10 @@ class AutoClickerApp:
             
             # 更新引擎配置
             self._update_engine_config()
-            
+
+            # 传递动作序列到引擎
+            self.engine.click_sequence = self._current_actions
+
             # 开始点击
             success = self.engine.start_clicking()
             if success:
