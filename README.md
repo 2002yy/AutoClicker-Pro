@@ -3,6 +3,9 @@
 [![Build and Release](https://github.com/2002yy/AutoClicker-Pro/actions/workflows/build.yml/badge.svg)](https://github.com/2002yy/AutoClicker-Pro/actions/workflows/build.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Platform](https://img.shields.io/badge/platform-Windows-blue)](https://github.com/2002yy/AutoClicker-Pro/releases)
+> Portfolio note: personal productivity tool project — CI, packaging, encryption and testing focused.
+> 作品集说明：个人效率工具项目，重点展示 CI、打包、加密和测试能力。
+
 
 **一款基于 Python 的 Windows 连点器。支持鼠标连点、键盘连点、宏录制与回放，拥有美观的 Win11 风格界面。**
 #
@@ -116,3 +119,12 @@ python -m unittest discover tests -v
 ## 许可证
 
 MIT License — 详见 [LICENSE](LICENSE)
+
+## Roadmap
+
+- [ ] Macro editing UI
+- [ ] Scheduled auto-click tasks
+- [ ] Multi-profile macro management
+- [ ] Hotkey customization
+- [ ] Internationalization (i18n)
+
