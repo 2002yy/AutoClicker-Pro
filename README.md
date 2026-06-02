@@ -5,6 +5,19 @@
 [![Platform](https://img.shields.io/badge/platform-Windows-blue)](https://github.com/2002yy/AutoClicker-Pro/releases)
 
 **一款基于 Python 的 Windows 连点器。支持鼠标连点、键盘连点、宏录制与回放，拥有美观的 Win11 风格界面。**
+#
+## Responsible Use
+
+This tool is intended for personal productivity automation, accessibility experiments, UI testing and repetitive desktop workflow automation.
+
+Do not use it to violate software terms of service, bypass anti-cheat systems, automate online games, or perform abusive behavior on third-party services.
+
+## 合规使用说明
+
+本工具用于个人效率自动化、无障碍操作实验、桌面 UI 测试和重复流程辅助。
+
+请勿用于违反软件服务条款、绕过反作弊、在线游戏作弊、批量刷接口或其他滥用场景。
+
 
 ---
 
@@ -48,6 +61,15 @@ python pack.py
 | `ESC` | 停止录制 |
 
 ---
+## Engineering Highlights
+
+- Layered structure: config / core / ui / utils
+- Macro recording and playback with millisecond precision
+- Fernet encrypted macro storage
+- PyInstaller single-file EXE packaging
+- GitHub Actions build workflow
+- 43 unit tests
+
 
 ## 项目结构
 
