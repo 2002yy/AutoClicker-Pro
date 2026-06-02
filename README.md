@@ -8,7 +8,7 @@
 
 
 **一款基于 Python 的 Windows 连点器。支持鼠标连点、键盘连点、宏录制与回放，拥有美观的 Win11 风格界面。**
-#
+
 ## Responsible Use
 
 This tool is intended for personal productivity automation, accessibility experiments, UI testing and repetitive desktop workflow automation.
