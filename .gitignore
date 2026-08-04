@@ -18,6 +18,9 @@ __pycache__/
 # 工作区元数据
 .workbuddy/
 
+# 本地 AI 工具状态（plans/worktrees 等，非源码）
+.claude/
+
 # 操作系统
 Thumbs.db
 .DS_Store

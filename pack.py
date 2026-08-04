@@ -12,7 +12,6 @@ def install_deps() -> None:
     """Install local packaging dependencies for an interactive developer build."""
     required = {
         "PyInstaller": "pyinstaller",
-        "customtkinter": "customtkinter",
         "pynput": "pynput",
         "cryptography": "cryptography",
     }
@@ -37,6 +36,7 @@ def build() -> Path:
     import PyInstaller.__main__
 
     # 1. 组装 PyInstaller 参数（单文件、无控制台窗口）
+    # 注意：应用使用标准 tkinter/ttk，不依赖 customtkinter，故不收集该包
     args = [
         str(source),
         f"--name={EXE_NAME}",
@@ -44,7 +44,6 @@ def build() -> Path:
         "--onefile",
         "--windowed",
         "--clean",
-        "--collect-all=customtkinter",
     ]
 
     icon = Path("icon.ico")
