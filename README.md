@@ -87,7 +87,7 @@ python pack.py
 - Fernet encrypted macro storage
 - PyInstaller single-file EXE packaging
 - GitHub Actions build workflow
-- 43 unit tests
+- 64 unit tests
 
 
 ## 项目结构
