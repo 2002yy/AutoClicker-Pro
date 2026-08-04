@@ -202,25 +202,51 @@ def validate_time_inputs(interval_ms: Any, record_interval: Any,
 def validate_macro_action(action: Dict[str, Any]) -> Tuple[bool, str]:
     """
     验证宏动作数据
-    
+
+    支持两种动作：
+    - 鼠标动作（kind 缺省或为 'mouse'）：需 x/y/button/action_type
+    - 键盘动作（kind='key'）：需 key（规范键名）/action_type，x/y 不使用
+
     Args:
-        action: 宏动作字典，包含 x, y, button, action_type 等字段
-        
+        action: 宏动作字典
+
     Returns:
         (是否有效，错误消息)
     """
-    # 检查必需字段
-    required_fields = ['x', 'y', 'button', 'action_type']
-    for field in required_fields:
+    if not isinstance(action, dict):
+        return False, "宏动作数据必须是字典格式"
+
+    kind = action.get('kind', 'mouse')
+
+    # 键盘动作：只需 action_type + key（x/y/button 不使用）
+    if kind == 'key':
+        is_valid, error_msg = validate_string(
+            action.get('action_type', ''), "动作类型",
+            required=True, allowed_values=['press', 'release']
+        )
+        if not is_valid:
+            return False, error_msg
+        key = action.get('key')
+        if not key:
+            return False, "键盘动作缺少键名 (key)"
+        return True, ""
+
+    # 鼠标动作：先检查必需字段（保持旧版报错文案），再逐项校验
+    for field in ('x', 'y', 'button'):
         if field not in action:
             return False, f"宏动作缺少必需字段：{field}"
-    
-    # 验证坐标
+
+    is_valid, error_msg = validate_string(
+        action.get('action_type', ''), "动作类型",
+        required=True, allowed_values=['press', 'release']
+    )
+    if not is_valid:
+        return False, error_msg
+
     is_valid, error_msg = validate_coordinate(action['x'], action['y'])
     if not is_valid:
         return False, error_msg
-    
-    # 验证按钮类型
+
     is_valid, error_msg = validate_string(
         action['button'], "按钮类型",
         required=True,
@@ -228,16 +254,7 @@ def validate_macro_action(action: Dict[str, Any]) -> Tuple[bool, str]:
     )
     if not is_valid:
         return False, error_msg
-    
-    # 验证动作类型
-    is_valid, error_msg = validate_string(
-        action['action_type'], "动作类型",
-        required=True,
-        allowed_values=['press', 'release']
-    )
-    if not is_valid:
-        return False, error_msg
-    
+
     # 验证时间戳（可选）
     if 'timestamp' in action:
         is_valid, error_msg = validate_number(
@@ -247,7 +264,7 @@ def validate_macro_action(action: Dict[str, Any]) -> Tuple[bool, str]:
         )
         if not is_valid:
             return False, error_msg
-    
+
     return True, ""
 
 

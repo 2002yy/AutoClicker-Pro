@@ -64,19 +64,26 @@ class HotkeyManager:
         if not self._is_running:
             return
         
-        # 获取按键名称
         key_name = self._get_key_name(key)
-        if key_name:
+        if not key_name:
+            return
+        
+        with self._lock:
+            # 操作系统在长按时会持续投递 on_press，这里去重，
+            # 避免一次按住 F8 触发几十次回调。
+            if key_name in self._pressed_keys:
+                return
             self._pressed_keys.add(key_name)
-            
-            # 检查是否匹配任何注册的快捷键
-            self._check_hotkeys()
+        
+        # 检查是否匹配任何注册的快捷键
+        self._check_hotkeys()
     
     def _on_release(self, key):
         """按键释放事件"""
         key_name = self._get_key_name(key)
         if key_name:
-            self._pressed_keys.discard(key_name)
+            with self._lock:
+                self._pressed_keys.discard(key_name)
     
     def _get_key_name(self, key) -> Optional[str]:
         """获取按键名称"""
@@ -93,19 +100,19 @@ class HotkeyManager:
     
     def _check_hotkeys(self):
         """检查是否匹配任何注册的快捷键"""
-        current_keys = frozenset(self._pressed_keys)
+        with self._lock:
+            current_keys = frozenset(self._pressed_keys)
+            matched = [
+                cb for hotkey, cb in self._hotkeys.items()
+                if frozenset(hotkey.split('+')) == current_keys
+            ]
         
-        for hotkey, callback in list(self._hotkeys.items()):
-            # 解析快捷键组合
-            key_parts = set(hotkey.split('+'))
-            
-            # 检查是否完全匹配
-            if key_parts == current_keys:
-                try:
-                    # 在新线程中执行回调，避免阻塞监听
-                    threading.Thread(target=callback, daemon=True).start()
-                except Exception as e:
-                    print(f"执行快捷键回调失败：{e}")
+        for callback in matched:
+            try:
+                # 在新线程中执行回调，避免阻塞监听
+                threading.Thread(target=callback, daemon=True).start()
+            except Exception as e:
+                print(f"执行快捷键回调失败：{e}")
     
     def is_running(self) -> bool:
         """检查是否正在运行"""

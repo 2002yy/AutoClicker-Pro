@@ -1,6 +1,6 @@
 """核心模块包"""
-# 注意：engine.py 需要 X server，在无头环境中导入会失败
-# 只导出 macros 模块中的类以避免此问题
-from .macros import ClickAction, MacroRecorder, MacroPlayer, MacroStorage
+# 注意：engine.py 依赖 pynput，在无图形环境中导入会失败，
+# 因此这里只导出纯数据结构，需要引擎时请显式 from core.engine import ClickerEngine
+from .macros import ClickAction
 
-__all__ = ['ClickAction', 'MacroRecorder', 'MacroPlayer', 'MacroStorage']
+__all__ = ['ClickAction']

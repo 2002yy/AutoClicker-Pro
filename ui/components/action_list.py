@@ -86,20 +86,35 @@ class ActionList(ttk.Frame):
     def _format_action(self, index: int, action: Dict[str, Any]) -> str:
         """
         格式化动作为显示文本
-        
+
         Args:
             index: 动作序号
             action: 动作字典
-            
+
         Returns:
             格式化的字符串
         """
+        action_type = action.get('action_type', 'press')
+        timestamp = action.get('timestamp', 0)
+
+        # 翻译动作类型
+        action_names = {
+            'press': '按下',
+            'release': '释放',
+            'tap': '点击'
+        }
+        action_name = action_names.get(action_type, action_type)
+
+        # 键盘动作
+        if action.get('kind', 'mouse') == 'key':
+            key = action.get('key') or '?'
+            return f"{index}. 按键 [{key}] {action_name} @ {timestamp:.2f}s"
+
+        # 鼠标动作
         x = action.get('x', 0)
         y = action.get('y', 0)
         button = action.get('button', 'left')
-        action_type = action.get('action_type', 'press')
-        timestamp = action.get('timestamp', 0)
-        
+
         # 翻译按钮名称
         button_names = {
             'left': '左键',
@@ -109,14 +124,7 @@ class ActionList(ttk.Frame):
             'x2': '侧键 2'
         }
         button_name = button_names.get(button, button)
-        
-        # 翻译动作类型
-        action_names = {
-            'press': '按下',
-            'release': '释放'
-        }
-        action_name = action_names.get(action_type, action_type)
-        
+
         return f"{index}. ({x}, {y}) {button_name} {action_name} @ {timestamp:.2f}s"
     
     def get_selected_index(self) -> Optional[int]:

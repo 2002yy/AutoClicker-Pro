@@ -108,5 +108,64 @@ class TestHotkeyManager(unittest.TestCase):
             self.assertIn(key, hotkeys)
 
 
+class _FakeKey:
+    """模拟 pynput 的特殊功能键"""
+
+    def __init__(self, name):
+        self.name = name
+        self.char = None
+
+
+class TestHotkeyDispatch(unittest.TestCase):
+    """测试按键分发与去抖（不启动真实监听器，直接驱动内部回调）"""
+
+    def setUp(self):
+        self.manager = HotkeyManager()
+        self.manager._is_running = True  # 跳过真实 listener
+        self.calls = []
+        self.manager.register_hotkey('f8', lambda: self.calls.append('f8'))
+
+    def _settle(self):
+        # 回调在守护线程中执行，给它一点时间
+        time.sleep(0.15)
+
+    def test_press_triggers_callback(self):
+        self.manager._on_press(_FakeKey('f8'))
+        self._settle()
+        self.assertEqual(self.calls, ['f8'])
+
+    def test_key_repeat_is_debounced(self):
+        """长按时操作系统会连发 on_press，应只触发一次"""
+        for _ in range(10):
+            self.manager._on_press(_FakeKey('f8'))
+        self._settle()
+        self.assertEqual(len(self.calls), 1)
+
+    def test_release_then_press_triggers_again(self):
+        self.manager._on_press(_FakeKey('f8'))
+        self.manager._on_release(_FakeKey('f8'))
+        self.manager._on_press(_FakeKey('f8'))
+        self._settle()
+        self.assertEqual(len(self.calls), 2)
+
+    def test_unrelated_key_does_not_trigger(self):
+        self.manager._on_press(_FakeKey('f7'))
+        self._settle()
+        self.assertEqual(self.calls, [])
+
+    def test_extra_modifier_breaks_match(self):
+        """f8 + ctrl 不应命中单键 f8"""
+        self.manager._on_press(_FakeKey('ctrl_l'))
+        self.manager._on_press(_FakeKey('f8'))
+        self._settle()
+        self.assertEqual(self.calls, [])
+
+    def test_ignored_when_not_running(self):
+        self.manager._is_running = False
+        self.manager._on_press(_FakeKey('f8'))
+        self._settle()
+        self.assertEqual(self.calls, [])
+
+
 if __name__ == '__main__':
     unittest.main()

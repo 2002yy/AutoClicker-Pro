@@ -12,7 +12,9 @@ from pynput import mouse, keyboard
 from config.constants import (
     DEFAULT_INTERVAL_MS, DEFAULT_RECORD_INTERVAL, 
     DEFAULT_HOLD_DURATION, DEFAULT_REPEAT_COUNT, DEFAULT_REPEAT_INTERVAL,
-    KEY_MAP
+    HOTKEY_START_STOP, HOTKEY_START_RECORDING,
+    HOTKEY_STOP_RECORDING, HOTKEY_CANCEL,
+    STATUS_RECORDING
 )
 from config.encryption import encrypt_macro, decrypt_macro
 from config.validation import validate_time_inputs, validate_macro_sequence
@@ -21,6 +23,11 @@ from core.macros import ClickAction
 
 class ClickerEngine:
     """自动点击器引擎 - 处理所有核心业务逻辑"""
+    
+    # 录制时需跳过的键名（全局快捷键），避免把控制键录进宏
+    _SKIP_KEY_NAMES = frozenset(
+        (HOTKEY_START_STOP, HOTKEY_START_RECORDING, HOTKEY_STOP_RECORDING, HOTKEY_CANCEL)
+    )
     
     def __init__(self):
         self.mouse_controller = mouse.Controller()
@@ -47,6 +54,10 @@ class ClickerEngine:
         # 回调函数
         self.on_status_change: Optional[Callable[[str], None]] = None
         self.on_recording_update: Optional[Callable[[List[ClickAction]], None]] = None
+        
+        # 录制过滤钩子：接收 (x, y)，返回 True 表示该点击不计入录制。
+        # UI 层用它来排除用户点击本程序窗口（例如"停止录制"按钮）的动作。
+        self.ignore_click_predicate: Optional[Callable[[int, int], bool]] = None
     
     # ==================== 属性（线程安全） ====================
     
@@ -135,30 +146,10 @@ class ClickerEngine:
                     if not self.is_running:
                         break
                     
-                    # 移动鼠标到指定位置
-                    self.mouse_controller.position = (click_action.x, click_action.y)
-                    
-                    # 获取按钮对象
-                    button_map = {
-                        'left': mouse.Button.left,
-                        'right': mouse.Button.right,
-                        'middle': mouse.Button.middle,
-                        'x1': mouse.Button.x1,
-                        'x2': mouse.Button.x2
-                    }
-                    btn = button_map.get(click_action.button, mouse.Button.left)
-                    
-                    # 执行点击动作
-                    if click_action.action_type == 'press':
-                        self.mouse_controller.press(btn)
-                        
-                        # 如果需要按住一段时间
-                        if self.hold_duration > 0:
-                            time.sleep(self.hold_duration / 1000.0)
-                            self.mouse_controller.release(btn)
-                    
-                    elif click_action.action_type == 'release':
-                        self.mouse_controller.release(btn)
+                    if click_action.kind == 'key':
+                        self._perform_key_action(click_action)
+                    else:
+                        self._perform_mouse_action(click_action)
                     
                     # 根据间隔等待
                     if len(self.click_sequence) > 1:
@@ -174,6 +165,69 @@ class ClickerEngine:
         finally:
             self.stop_clicking()
     
+    @staticmethod
+    def _key_to_name(key) -> Optional[str]:
+        """把 pynput 键对象转成规范键名字符串。
+        
+        普通字符键（如 'a'、'1'、空格）返回其字符；特殊键（如 Enter、F1、
+        左 Ctrl）返回其枚举名（'enter'、'f1'、'ctrl_l'）。无法识别返回 None。
+        """
+        if hasattr(key, 'char') and key.char is not None:
+            return key.char
+        name = getattr(key, 'name', None)
+        return name if name else None
+    
+    def _resolve_key(self, name: Optional[str]):
+        """把规范键名解析回 pynput 键对象；无法解析返回 None。"""
+        if not name:
+            return None
+        if len(name) == 1:
+            # 单字符 -> KeyCode（'a'、' '、'1' 等）
+            return keyboard.KeyCode(char=name)
+        # 特殊键名 -> keyboard.Key 枚举成员（'enter'、'f1'、'ctrl_l' 等）
+        return getattr(keyboard.Key, name, None)
+    
+    def _perform_mouse_action(self, action):
+        """执行单个鼠标点击动作"""
+        self.mouse_controller.position = (action.x, action.y)
+        
+        button_map = {
+            'left': mouse.Button.left,
+            'right': mouse.Button.right,
+            'middle': mouse.Button.middle,
+            'x1': mouse.Button.x1,
+            'x2': mouse.Button.x2
+        }
+        btn = button_map.get(action.button, mouse.Button.left)
+        
+        if action.action_type == 'press':
+            self.mouse_controller.press(btn)
+            if self.hold_duration > 0:
+                time.sleep(self.hold_duration / 1000.0)
+                self.mouse_controller.release(btn)
+        elif action.action_type == 'release':
+            self.mouse_controller.release(btn)
+    
+    def _perform_key_action(self, action):
+        """执行单个键盘动作。
+        
+        录制时只记录 'press'，因此回放时对 press 采用"轻点"语义：
+        按下后若 hold_duration<=0 立即释放（避免按键卡住），否则按住指定时长再释放。
+        """
+        k = self._resolve_key(action.key)
+        if k is None:
+            return
+        
+        if action.action_type in ('press', 'tap'):
+            self.keyboard_controller.press(k)
+            if self.hold_duration > 0:
+                time.sleep(self.hold_duration / 1000.0)
+                self.keyboard_controller.release(k)
+            else:
+                self.keyboard_controller.release(k)
+        elif action.action_type == 'release':
+            self.keyboard_controller.release(k)
+    
     # ==================== 宏录制逻辑 ====================
     
     def start_recording(self) -> bool:
@@ -186,7 +240,7 @@ class ClickerEngine:
         self.recording_start_time = time.time()
         
         if self.on_status_change:
-            self.on_status_change("正在录制... 按 ESC 停止")
+            self.on_status_change(STATUS_RECORDING)
         
         # 开始监听鼠标和键盘事件
         self.mouse_listener = mouse.Listener(
@@ -230,6 +284,15 @@ class ClickerEngine:
         if not self.is_recording:
             return
         
+        # 过滤掉落在本程序窗口内的点击（如点"停止录制"按钮），
+        # 否则这些操作 UI 的动作会被误录进宏里。
+        if self.ignore_click_predicate is not None:
+            try:
+                if self.ignore_click_predicate(x, y):
+                    return
+            except Exception:
+                pass  # 过滤器异常不应中断录制
+        
         # 确定按钮名称
         button_name = 'left'
         if button == mouse.Button.right:
@@ -255,15 +318,33 @@ class ClickerEngine:
             self.on_recording_update(self.click_sequence.copy())
     
     def _on_key_press(self, key):
-        """键盘按键回调 - 按下 ESC 键停止录制"""
+        """键盘按键回调 - ESC 停止录制，其余按键作为键盘动作录制"""
         if not self.is_recording:
             return
         
-        try:
-            if key == keyboard.Key.esc:
-                self.stop_recording()
-        except AttributeError:
-            pass
+        # ESC 停止录制
+        if key == keyboard.Key.esc:
+            self.stop_recording()
+            return
+        
+        # 把按键转成规范键名；无法识别的键忽略
+        name = self._key_to_name(key)
+        if name is None:
+            return
+        
+        # 跳过全局快捷键键（F8/F10/F11/ESC），避免把控制键录进宏
+        if name in self._SKIP_KEY_NAMES:
+            return
+        
+        # 记录为键盘动作（录制只记录按下，回放时按轻点语义执行）
+        timestamp = time.time() - self.recording_start_time
+        action = ClickAction(0, 0, '', 'press', timestamp, kind='key', key=name)
+        
+        with self._lock:
+            self.click_sequence.append(action)
+        
+        if self.on_recording_update:
+            self.on_recording_update(self.click_sequence.copy())
     
     # ==================== 宏文件操作 ====================
     

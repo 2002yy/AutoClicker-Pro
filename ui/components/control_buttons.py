@@ -43,12 +43,13 @@ class ControlButtons(ttk.Frame):
         )
         self.record_button.pack(side=tk.LEFT, padx=PADDING_SMALL)
         
-        # 点击按钮
+        # 点击按钮（主操作，使用强调色）
         self.click_button = ttk.Button(
             self,
             text="开始点击",
             command=self._on_click_click,
-            state=tk.DISABLED
+            state=tk.DISABLED,
+            style='Accent.TButton'
         )
         self.click_button.pack(side=tk.LEFT, padx=PADDING_SMALL)
         
@@ -111,7 +112,7 @@ class ControlButtons(ttk.Frame):
         if is_clicking:
             self.click_button.config(text="停止点击", style=STYLE_DANGER)
         else:
-            self.click_button.config(text="开始点击", style="TButton")
+            self.click_button.config(text="开始点击", style="Accent.TButton")
     
     def enable_click_button(self, enabled: bool):
         """

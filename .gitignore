@@ -1,79 +1,23 @@
-# Compiled and build artifacts
-*.pyc
-__pycache__/
-*.o
-*.obj
-*.class
-*.exe
-*.dll
-*.so
-*.a
-*.out
-*.spec
-
-# Dependencies
-node_modules/
-venv/
-.venv/
-.env
-.env.local
-.env.*
-
-# Build directories
-dist/
+# 构建产物（含可能泄露他人路径的缓存，勿提交）
 build/
-target/
-.gradle/
+dist/
+*.spec.bak
 
-# Python specific
+# 本地虚拟环境（用于测试/打包的临时 venv）
+envs/
+
+# Python 缓存
+__pycache__/
+*.pyc
 *.pyo
-*.pyd
-.Python
-.Pytest_cache/
+
+# 测试/类型检查缓存
+.pytest_cache/
 .mypy_cache/
-.coverage
 
-# Logs and temp files
-*.log
-*.tmp
-*.swp
-*.swo
+# 工作区元数据
+.workbuddy/
 
-# Editors
-.vscode/
-.idea/
-
-# Claude Code
-.claude/
-
-# OS generated files
-.DS_Store
+# 操作系统
 Thumbs.db
-
-# Coverage reports
-coverage/
-htmlcov/
-
-# Compressed files
-*.zip
-*.gz
-*.tar
-*.tgz
-*.bz2
-*.xz
-*.7z
-*.rar
-*.zst
-*.lz4
-*.lzh
-*.cab
-*.arj
-*.rpm
-*.deb
-*.Z
-*.lz
-*.lzo
-*.tar.gz
-*.tar.bz2
-*.tar.xz
-*.tar.zst
+.DS_Store

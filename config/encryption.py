@@ -12,8 +12,8 @@ from cryptography.fernet import Fernet
 from typing import Optional, List, Dict, Any
 
 from .constants import (
-    CONFIG_DIR, KEY_FILE, SALT_FILE, ENCRYPTED_CONFIG_FILE,
-    ENCRYPTION_ALGORITHM, ENCRYPTION_ITERATIONS, ENCRYPTION_KEY_LENGTH
+    CONFIG_DIR, KEY_FILE, SALT_FILE,
+    ENCRYPTION_ITERATIONS, ENCRYPTION_KEY_LENGTH
 )
 
 

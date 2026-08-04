@@ -14,64 +14,72 @@ on:
 jobs:
   build-windows:
     runs-on: windows-latest
-    
+
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
-      
+
     - name: Set up Python
       uses: actions/setup-python@v5
       with:
         python-version: '3.11'
-        
+
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
         pip install -r requirements.txt
         pip install pyinstaller
-        
-    - name: Build Windows executable
-      run: |
-        pyinstaller --onefile --name "AutoClickerPro" --icon=NONE --add-data "config;config" --add-data "core;core" --add-data "ui;ui" --add-data "utils;utils" main.py
       shell: pwsh
-      
+
+    - name: Run unit tests
+      run: python -m unittest discover tests -v
+      shell: pwsh
+
+    - name: Build Windows executable
+      # --windowed 必须保留，否则 GUI 程序运行时会额外弹出控制台窗口。
+      # 不再用 --add-data 打包 config/core/ui/utils：它们是被 import 的 Python 包，
+      # PyInstaller 依赖分析已自动收录，作为 data 再复制一份会造成冗余与导入歧义。
+      run: pyinstaller --onefile --windowed --name "AutoClickerPro" --icon=NONE main.py
+      shell: pwsh
+
     - name: Create Windows release package
       run: |
         New-Item -ItemType Directory -Force -Path release
         Copy-Item dist\AutoClickerPro.exe release\
         Copy-Item README.md release\
-        Copy-Item LICENSE release\ 2>$null || echo "No LICENSE file"
+        Copy-Item LICENSE release\ -ErrorAction SilentlyContinue
         Compress-Archive -Path release\* -DestinationPath AutoClickerPro_Windows.zip -Force
       shell: pwsh
-      
+
     - name: Upload Windows artifact
       uses: actions/upload-artifact@v4
       with:
         name: windows-build
         path: AutoClickerPro_Windows.zip
-        
+
   build-linux:
     runs-on: ubuntu-latest
-    
+
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
-      
+
     - name: Set up Python
       uses: actions/setup-python@v5
       with:
         python-version: '3.11'
-        
+
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
         pip install -r requirements.txt
         pip install pyinstaller
-        
+
     - name: Build Linux executable
-      run: |
-        pyinstaller --onefile --name "AutoClickerPro" --icon=NONE --add-data "config:config" --add-data "core:core" --add-data "ui:ui" --add-data "utils:utils" main.py
-        
+      # 说明：Linux 侧不跑单元测试——pynput 在无 X server 的 runner 上无法导入。
+      # 测试已在 Windows job 中执行，两边源码一致。
+      run: pyinstaller --onefile --name "AutoClickerPro" --icon=NONE main.py
+
     - name: Create Linux release package
       run: |
         mkdir -p release
@@ -79,31 +87,31 @@ jobs:
         cp README.md release/
         cp LICENSE release/ 2>/dev/null || echo "No LICENSE file"
         cd release && tar -czvf ../AutoClickerPro_Linux.tar.gz *
-        
+
     - name: Upload Linux artifact
       uses: actions/upload-artifact@v4
       with:
         name: linux-build
         path: AutoClickerPro_Linux.tar.gz
-        
+
   create-release:
     needs: [build-windows, build-linux]
     runs-on: ubuntu-latest
     if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'
-    
+
     steps:
     - name: Download Windows artifact
       uses: actions/download-artifact@v4
       with:
         name: windows-build
         path: ./artifacts
-        
+
     - name: Download Linux artifact
       uses: actions/download-artifact@v4
       with:
         name: linux-build
         path: ./artifacts
-        
+
     - name: Get version from tag or input
       id: get_version
       run: |
@@ -113,52 +121,74 @@ jobs:
           VERSION="${{ github.ref_name }}"
         fi
         echo "version=$VERSION" >> $GITHUB_OUTPUT
-        
+
+    - name: Compute checksums
+      run: |
+        cd artifacts
+        sha256sum AutoClickerPro_Windows.zip AutoClickerPro_Linux.tar.gz | tee SHA256SUMS.txt
+
     - name: Generate changelog
       id: changelog
+      # 注意：heredoc 的正文与结束符 EOF 必须与 run 块保持同一缩进层级。
+      # YAML 会统一剥离块标量缩进，shell 收到的仍是顶格文本；若在 YAML 里顶格书写，
+      # 块标量会被提前终止，整个 workflow 会变成非法 YAML 而无法运行。
       run: |
-        cat > changelog.md << 'EOF'
-## 🎉 自动点击器专业版 ${{ steps.get_version.outputs.version }}
+        cat > changelog.md << 'CHANGELOG_EOF'
+        ## 🎉 自动点击器专业版 ${{ steps.get_version.outputs.version }}
 
-### ✨ 新特性
-- 🔐 **加密存储**: 宏录制文件采用 Fernet 对称加密，安全保护您的操作序列
-- 🧩 **模块化架构**: UI 与业务逻辑完全解耦，代码更易维护
-- ⚡ **高性能**: 优化的线程管理，低延迟响应
-- 🛡️ **安全防护**: 完整的输入验证和防滥用机制
-- 🎨 **现代化界面**: 简洁直观的用户体验
+        ### ✨ 功能
+        - 🖱️ **鼠标连点**: 左键/右键/中键，毫秒级间隔、按住时长、重复次数可配
+        - 🔴 **鼠标宏录制**: 录制点击序列并按配置回放（暂不支持键盘录制）
+        - ⌨️ **全局快捷键**: 窗口失焦时同样可启停
+        - 🔐 **本地加密存储**: 宏文件采用 Fernet 对称加密（本地混淆级保护）
+        - 🧩 **模块化架构**: UI 与业务逻辑完全解耦
+        - ⚡ **线程安全**: 状态读写加锁，后台线程经队列回主线程更新 UI
 
-### 🔧 技术改进
-- 分离配置文件 (constants/encryption/validation)
-- 新增宏管理模块 (macros.py)
-- 快捷键管理器 (hotkey_manager.py)
-- 完整的单元测试覆盖 (36+ 测试用例)
-- CI/CD 自动化构建
+        ### 🔧 技术改进
+        - 分离配置文件 (constants/encryption/validation)
+        - 全局快捷键管理器接入主界面 (hotkey_manager.py)
+        - 录制时自动排除对本程序窗口的点击
+        - 单元测试 51 项，CI 中随构建自动执行
 
-### 📦 安装说明
-#### Windows
-1. 下载 `AutoClickerPro_Windows.zip`
-2. 解压到任意目录
-3. 双击运行 `AutoClickerPro.exe`
+        ### 📦 安装说明
+        #### Windows
+        1. 下载 `AutoClickerPro_Windows.zip`
+        2. 解压到任意目录
+        3. 双击运行 `AutoClickerPro.exe`
 
-#### Linux
-1. 下载 `AutoClickerPro_Linux.tar.gz`
-2. 解压：`tar -xzvf AutoClickerPro_Linux.tar.gz`
-3. 运行：`./AutoClickerPro`
+        #### Linux
+        1. 下载 `AutoClickerPro_Linux.tar.gz`
+        2. 解压：`tar -xzvf AutoClickerPro_Linux.tar.gz`
+        3. 运行：`./AutoClickerPro`
 
-### ⌨️ 快捷键
-- `F8`: 开始/停止连点
-- `F9`: 开始/停止录制
-- `F10`: 播放宏
-- `ESC`: 停止当前操作
+        ### ⌨️ 快捷键（全局生效）
+        - `F8`: 开始 / 停止连点
+        - `F10`: 开始录制
+        - `F11`: 停止录制
+        - `ESC`: 一键全停（同时终止录制与连点）
 
-### 📝 更新日志
-- 首次正式发布
-- 支持鼠标连点和键盘宏录制
-- 加密存储保护隐私
-- 跨平台支持 (Windows/Linux)
-EOF
+        ### ⚠️ 关于杀毒软件报毒
+        本程序需要注册全局键盘钩子并模拟鼠标点击，这些行为与键盘记录器的技术特征重合，
+        加之使用 PyInstaller 单文件打包，**可能被部分杀毒软件启发式引擎误报**。
+
+        - 本项目完全开源，可自行审阅源码
+        - 也可以不用 EXE，直接 `pip install -r requirements.txt && python main.py` 从源码运行
+        - 请使用下方 SHA-256 校验下载文件的完整性
+
+        ### ⚖️ 使用限制
+        本工具仅供合法的自动化、测试与无障碍辅助用途。
+        **禁止**用于违反目标平台服务条款的自动化（游戏外挂、刷单刷量、绕过人机验证等）。
+        使用者自行承担全部后果，详见 README 的「合法使用与免责声明」。
+        CHANGELOG_EOF
+        {
+          echo ""
+          echo "### 🔒 文件校验 (SHA-256)"
+          echo '```'
+          cat artifacts/SHA256SUMS.txt
+          echo '```'
+        } >> changelog.md
         cat changelog.md
-        
+
     - name: Create Release
       uses: softprops/action-gh-release@v1
       with:
@@ -167,6 +197,7 @@ EOF
         files: |
           ./artifacts/AutoClickerPro_Windows.zip
           ./artifacts/AutoClickerPro_Linux.tar.gz
+          ./artifacts/SHA256SUMS.txt
         draft: false
         prerelease: false
         generate_release_notes: true

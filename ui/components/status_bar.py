@@ -10,7 +10,7 @@ from typing import Optional
 from config.constants import (
     FONT_FAMILY, FONT_SIZE_NORMAL,
     COLOR_DARK, COLOR_DANGER, COLOR_SUCCESS, COLOR_WARNING,
-    PADDING_SMALL, STATUS_READY
+    PADDING_SMALL, STATUS_READY, STATUS_RECORDING
 )
 
 
@@ -65,7 +65,7 @@ class StatusBar(ttk.Frame):
     
     def set_recording(self):
         """设置为录制状态"""
-        self.set_status("正在录制... 按 ESC 停止", COLOR_DANGER)
+        self.set_status(STATUS_RECORDING, COLOR_DANGER)
     
     def set_recording_stopped(self):
         """设置为录制停止状态"""

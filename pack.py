@@ -13,7 +13,8 @@ EXE_NAME = "AutoClickerPro"
 def install_deps():
     """检查并自动安装必要的打包库"""
     print("正在检查环境...")
-    required = ["pyinstaller", "customtkinter", "pynput"]
+    # 注意：应用使用标准 tkinter（Python 自带），不需要 customtkinter
+    required = ["pyinstaller", "pynput", "cryptography"]
     for package in required:
         try:
             __import__(package)
@@ -32,24 +33,15 @@ def build():
         return
 
     import PyInstaller.__main__
-    import customtkinter
 
-    # 1. 获取 CustomTkinter 的资源路径 (关键步骤)
-    ctk_path = os.path.dirname(customtkinter.__file__)
-    print(f"✅ 找到 UI 库路径: {ctk_path}")
-
-    # 2. 组装 PyInstaller 参数
-    # 注意：Windows下资源分隔符是分号 ;
-    add_data_arg = f"{ctk_path};customtkinter"
-
+    # 1. 组装 PyInstaller 参数（单文件、无控制台窗口）
     args = [
         SOURCE_FILE,  # 源文件
-        f"--name={EXE_NAME}",  # exe名字
+        f"--name={EXE_NAME}",  # exe 名字
         "--noconfirm",  # 覆盖输出不询问
         "--onefile",  # 打包成单文件 exe
         "--windowed",  # 【重要】不显示黑色的控制台窗口
         "--clean",  # 清理临时缓存
-        f"--add-data={add_data_arg}",  # 注入 customtkinter 资源
     ]
 
     # 如果你有图标，把图标放在同级目录叫 icon.ico，然后取消下面这行的注释
@@ -58,7 +50,7 @@ def build():
     print(f"\n🚀 开始打包 [{SOURCE_FILE}] ...")
     print("这可能需要 1-3 分钟，请耐心等待...\n")
 
-    # 3. 执行打包
+    # 2. 执行打包
     try:
         PyInstaller.__main__.run(args)
         print("\n" + "=" * 40)

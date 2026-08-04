@@ -13,8 +13,8 @@
 │   └── validation.py        # 输入验证功能
 │
 ├── core/                    # 核心业务逻辑层
-│   ├── engine.py            # ClickerEngine 引擎类
-│   └── macros.py            # 宏录制与播放
+│   ├── engine.py            # ClickerEngine：连点、录制、宏存取
+│   └── macros.py            # ClickAction 数据模型
 │
 ├── ui/                      # UI 界面层
 │   ├── app.py               # 主应用程序类
@@ -25,9 +25,9 @@
 │       └── status_bar.py
 │
 ├── utils/                   # 工具模块
-│   └── hotkey_manager.py    # 快捷键管理
+│   └── hotkey_manager.py    # 全局快捷键管理（F8/F10/F11/ESC）
 │
-├── tests/                   # 单元测试（43 个）
+├── tests/                   # 单元测试（51 个）
 ├── docs/                    # 文档
 └── .github/workflows/       # CI/CD 配置
 ```
@@ -41,7 +41,11 @@
 
 ### 通信方式
 - UI 层通过回调函数接收业务逻辑层的状态更新
-- 所有跨线程 UI 更新使用 `root.after()` 确保在主线程执行
+- **所有跨线程 UI 更新统一投递到 `AutoClickerApp._ui_queue`**，由主线程每 50ms 轮询消费。
+  Tkinter 不是线程安全的，直接从 pynput 监听线程调用 `root.after()` 并无保证，故改为队列泵。
+- 全局快捷键回调同样先入队再执行，避免在监听线程里操作控件
+- 引擎通过可选的 `ignore_click_predicate` 钩子向 UI 询问"该坐标是否在本窗口内"，
+  以便录制时排除用户操作本程序界面产生的点击（引擎本身不依赖 Tk）
 
 ## 运行
 
@@ -58,7 +62,6 @@ python -m unittest discover tests -v
 
 ## 依赖
 
-- `pynput>=1.7`: 鼠标键盘控制
-- `cryptography>=41.0`: 加密功能
-- `customtkinter>=5.2`: UI 框架
-- `tkinter`: Python 内置 GUI 库
+- `pynput>=1.7`: 鼠标键盘控制与全局键盘钩子
+- `cryptography>=41.0`: 宏文件加密
+- `tkinter`: Python 内置 GUI 库（使用标准 `ttk` 控件，**未使用 customtkinter**）

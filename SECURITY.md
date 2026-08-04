@@ -20,5 +20,5 @@ This tool uses `pynput` to produce OS-level input events. This is the same mecha
 ## Recommended Usage
 
 - Run in an isolated user account for sensitive automation tasks
-- Review the source before running — the entire tool is a single Python file
+- Review the source before running — the tool is a multi-module Python project; inspect `config/`, `core/`, `ui/`, `utils/` 与 `main.py`
 - Audit the packaged EXE if building from source

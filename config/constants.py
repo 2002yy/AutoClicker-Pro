@@ -44,40 +44,23 @@ MS_PER_SECOND = 1000
 MS_PER_MINUTE = 60000
 MS_PER_HOUR = 3600000
 
-# ==================== 键盘按键映射 ====================
-KEY_MAP = {
-    'left': 'mouse_left',
-    'right': 'mouse_right',
-    'middle': 'mouse_middle',
-    'x1': 'mouse_x1',
-    'x2': 'mouse_x2'
-}
+# ==================== 全局快捷键定义 ====================
+# 注意：这里使用 pynput 的按键名（小写），由 utils.hotkey_manager 注册为全局热键，
+# 窗口失焦时同样生效。组合键写法示例：'ctrl+shift+s'。
+HOTKEY_START_STOP = 'f8'          # 开始 / 停止连点
+HOTKEY_START_RECORDING = 'f10'    # 开始录制
+HOTKEY_STOP_RECORDING = 'f11'     # 停止录制
+HOTKEY_CANCEL = 'esc'             # 取消（停止录制 / 停止连点）
 
-BUTTON_MAP_REVERSE = {
-    'mouse_left': 'left',
-    'mouse_right': 'right',
-    'mouse_middle': 'middle',
-    'mouse_x1': 'x1',
-    'mouse_x2': 'x2'
-}
-
-# ==================== 快捷键定义 ====================
-HOTKEY_START_STOP = '<F8>'
-HOTKEY_PICK_LOCATION = '<F9>'
-HOTKEY_START_RECORDING = '<F10>'
-HOTKEY_STOP_RECORDING = '<F11>'
-HOTKEY_CANCEL = '<Escape>'
+# 展示给用户的快捷键说明
+HOTKEY_HINT = "F8 启停连点 | F10 录制 | F11 停止录制 | ESC 全部停止"
 
 # ==================== 文件路径配置 ====================
 CONFIG_DIR = ".autoclicker_pro"
 KEY_FILE = ".key"
 SALT_FILE = "salt.key"
-ENCRYPTED_CONFIG_FILE = "encrypted_config.dat"
-MACROS_DIR = "macros"
-DEFAULT_MACRO_FILE = "default_macro.enc"
 
 # ==================== 加密配置 ====================
-ENCRYPTION_ALGORITHM = "SHA256"
 ENCRYPTION_ITERATIONS = 100000
 ENCRYPTION_KEY_LENGTH = 32
 
@@ -115,7 +98,7 @@ STYLE_SUCCESS = "Success.TButton"
 STATUS_READY = "就绪"
 STATUS_RUNNING = "正在点击..."
 STATUS_STOPPED = "已停止"
-STATUS_RECORDING = "正在录制... 按 ESC 停止"
+STATUS_RECORDING = "正在录制鼠标/键盘... 按 ESC 停止"
 STATUS_RECORDING_STOPPED = "录制已停止"
 STATUS_LOADING = "加载中..."
 STATUS_SAVING = "保存中..."

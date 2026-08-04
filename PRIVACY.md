@@ -22,7 +22,7 @@ Both are stored entirely on the user's machine. No data ever leaves the local en
 
 | Package | Purpose | Network |
 |---|---|---|
-| `customtkinter` | UI framework | None |
+| `tkinter`（Python 标准库） | UI framework | None |
 | `pynput` | Input simulation | None |
 | `pyinstaller` | Packaging (dev only) | None |
 
