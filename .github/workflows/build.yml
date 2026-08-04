@@ -1,205 +1,154 @@
-name: Build and Release
+name: Test, Build and Release
 
 on:
   push:
+    branches:
+      - main
     tags:
       - 'v*'
+  pull_request:
   workflow_dispatch:
     inputs:
       version:
-        description: 'Version tag (e.g., v1.0.0)'
+        description: 'Release tag, for example v1.0.1'
         required: true
-        default: 'v1.0.0'
+        type: string
+
+permissions:
+  contents: read
 
 jobs:
-  build-windows:
+  test:
+    name: Windows unit tests
     runs-on: windows-latest
+    timeout-minutes: 15
 
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
 
-    - name: Set up Python
-      uses: actions/setup-python@v5
-      with:
-        python-version: '3.11'
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: requirements.txt
 
-    - name: Install dependencies
-      run: |
-        python -m pip install --upgrade pip
-        pip install -r requirements.txt
-        pip install pyinstaller
-      shell: pwsh
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
 
-    - name: Run unit tests
-      run: python -m unittest discover tests -v
-      shell: pwsh
+      - name: Run unit tests
+        run: python -m unittest discover tests -v
 
-    - name: Build Windows executable
-      # --windowed 必须保留，否则 GUI 程序运行时会额外弹出控制台窗口。
-      # 不再用 --add-data 打包 config/core/ui/utils：它们是被 import 的 Python 包，
-      # PyInstaller 依赖分析已自动收录，作为 data 再复制一份会造成冗余与导入歧义。
-      run: pyinstaller --onefile --windowed --name "AutoClickerPro" --icon=NONE main.py
-      shell: pwsh
+  build-windows:
+    name: Build Windows executable
+    needs: test
+    runs-on: windows-latest
+    timeout-minutes: 20
 
-    - name: Create Windows release package
-      run: |
-        New-Item -ItemType Directory -Force -Path release
-        Copy-Item dist\AutoClickerPro.exe release\
-        Copy-Item README.md release\
-        Copy-Item LICENSE release\ -ErrorAction SilentlyContinue
-        Compress-Archive -Path release\* -DestinationPath AutoClickerPro_Windows.zip -Force
-      shell: pwsh
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
 
-    - name: Upload Windows artifact
-      uses: actions/upload-artifact@v4
-      with:
-        name: windows-build
-        path: AutoClickerPro_Windows.zip
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: requirements.txt
 
-  build-linux:
+      - name: Install build dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+          python -m pip install pyinstaller
+
+      - name: Build through the canonical packaging script
+        run: python pack.py --ci
+
+      - name: Validate executable
+        shell: pwsh
+        run: |
+          if (-not (Test-Path 'dist\AutoClickerPro.exe')) {
+            throw 'dist\AutoClickerPro.exe was not created'
+          }
+          $size = (Get-Item 'dist\AutoClickerPro.exe').Length
+          if ($size -le 0) {
+            throw 'AutoClickerPro.exe is empty'
+          }
+          Write-Host "Executable size: $size bytes"
+
+      - name: Create release package
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path release | Out-Null
+          Copy-Item 'dist\AutoClickerPro.exe' 'release\AutoClickerPro.exe'
+          Copy-Item 'README.md' 'release\README.md'
+          if (Test-Path 'LICENSE') {
+            Copy-Item 'LICENSE' 'release\LICENSE'
+          }
+          Compress-Archive -Path 'release\*' -DestinationPath 'AutoClickerPro_Windows.zip' -Force
+          if ((Get-Item 'AutoClickerPro_Windows.zip').Length -le 0) {
+            throw 'Release ZIP is empty'
+          }
+
+      - name: Upload Windows artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-build
+          path: AutoClickerPro_Windows.zip
+          if-no-files-found: error
+          retention-days: 14
+
+  release:
+    name: Publish GitHub Release
+    needs: build-windows
+    if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
 
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
+      - name: Download tested Windows artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: windows-build
+          path: artifacts
 
-    - name: Set up Python
-      uses: actions/setup-python@v5
-      with:
-        python-version: '3.11'
+      - name: Resolve and validate version
+        id: version
+        shell: bash
+        env:
+          DISPATCH_VERSION: ${{ inputs.version }}
+        run: |
+          if [[ "${GITHUB_EVENT_NAME}" == "workflow_dispatch" ]]; then
+            VERSION="${DISPATCH_VERSION}"
+          else
+            VERSION="${GITHUB_REF_NAME}"
+          fi
 
-    - name: Install dependencies
-      run: |
-        python -m pip install --upgrade pip
-        pip install -r requirements.txt
-        pip install pyinstaller
+          if [[ ! "${VERSION}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?$ ]]; then
+            echo "Invalid version: ${VERSION}. Expected a tag such as v1.0.1." >&2
+            exit 1
+          fi
 
-    - name: Build Linux executable
-      # 说明：Linux 侧不跑单元测试——pynput 在无 X server 的 runner 上无法导入。
-      # 测试已在 Windows job 中执行，两边源码一致。
-      run: pyinstaller --onefile --name "AutoClickerPro" --icon=NONE main.py
+          test -s artifacts/AutoClickerPro_Windows.zip
+          echo "version=${VERSION}" >> "${GITHUB_OUTPUT}"
 
-    - name: Create Linux release package
-      run: |
-        mkdir -p release
-        cp dist/AutoClickerPro release/
-        cp README.md release/
-        cp LICENSE release/ 2>/dev/null || echo "No LICENSE file"
-        cd release && tar -czvf ../AutoClickerPro_Linux.tar.gz *
+      - name: Create release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.version.outputs.version }}
+          target_commitish: ${{ github.sha }}
+          name: AutoClicker Pro ${{ steps.version.outputs.version }}
+          body: |
+            Automated Windows release built from the canonical `pack.py` entrypoint.
 
-    - name: Upload Linux artifact
-      uses: actions/upload-artifact@v4
-      with:
-        name: linux-build
-        path: AutoClickerPro_Linux.tar.gz
-
-  create-release:
-    needs: [build-windows, build-linux]
-    runs-on: ubuntu-latest
-    if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'
-
-    steps:
-    - name: Download Windows artifact
-      uses: actions/download-artifact@v4
-      with:
-        name: windows-build
-        path: ./artifacts
-
-    - name: Download Linux artifact
-      uses: actions/download-artifact@v4
-      with:
-        name: linux-build
-        path: ./artifacts
-
-    - name: Get version from tag or input
-      id: get_version
-      run: |
-        if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
-          VERSION="${{ github.event.inputs.version }}"
-        else
-          VERSION="${{ github.ref_name }}"
-        fi
-        echo "version=$VERSION" >> $GITHUB_OUTPUT
-
-    - name: Compute checksums
-      run: |
-        cd artifacts
-        sha256sum AutoClickerPro_Windows.zip AutoClickerPro_Linux.tar.gz | tee SHA256SUMS.txt
-
-    - name: Generate changelog
-      id: changelog
-      # 注意：heredoc 的正文与结束符 EOF 必须与 run 块保持同一缩进层级。
-      # YAML 会统一剥离块标量缩进，shell 收到的仍是顶格文本；若在 YAML 里顶格书写，
-      # 块标量会被提前终止，整个 workflow 会变成非法 YAML 而无法运行。
-      run: |
-        cat > changelog.md << 'CHANGELOG_EOF'
-        ## 🎉 自动点击器专业版 ${{ steps.get_version.outputs.version }}
-
-        ### ✨ 功能
-        - 🖱️ **鼠标连点**: 左键/右键/中键，毫秒级间隔、按住时长、重复次数可配
-        - 🔴 **鼠标宏录制**: 录制点击序列并按配置回放（暂不支持键盘录制）
-        - ⌨️ **全局快捷键**: 窗口失焦时同样可启停
-        - 🔐 **本地加密存储**: 宏文件采用 Fernet 对称加密（本地混淆级保护）
-        - 🧩 **模块化架构**: UI 与业务逻辑完全解耦
-        - ⚡ **线程安全**: 状态读写加锁，后台线程经队列回主线程更新 UI
-
-        ### 🔧 技术改进
-        - 分离配置文件 (constants/encryption/validation)
-        - 全局快捷键管理器接入主界面 (hotkey_manager.py)
-        - 录制时自动排除对本程序窗口的点击
-        - 单元测试 51 项，CI 中随构建自动执行
-
-        ### 📦 安装说明
-        #### Windows
-        1. 下载 `AutoClickerPro_Windows.zip`
-        2. 解压到任意目录
-        3. 双击运行 `AutoClickerPro.exe`
-
-        #### Linux
-        1. 下载 `AutoClickerPro_Linux.tar.gz`
-        2. 解压：`tar -xzvf AutoClickerPro_Linux.tar.gz`
-        3. 运行：`./AutoClickerPro`
-
-        ### ⌨️ 快捷键（全局生效）
-        - `F8`: 开始 / 停止连点
-        - `F10`: 开始录制
-        - `F11`: 停止录制
-        - `ESC`: 一键全停（同时终止录制与连点）
-
-        ### ⚠️ 关于杀毒软件报毒
-        本程序需要注册全局键盘钩子并模拟鼠标点击，这些行为与键盘记录器的技术特征重合，
-        加之使用 PyInstaller 单文件打包，**可能被部分杀毒软件启发式引擎误报**。
-
-        - 本项目完全开源，可自行审阅源码
-        - 也可以不用 EXE，直接 `pip install -r requirements.txt && python main.py` 从源码运行
-        - 请使用下方 SHA-256 校验下载文件的完整性
-
-        ### ⚖️ 使用限制
-        本工具仅供合法的自动化、测试与无障碍辅助用途。
-        **禁止**用于违反目标平台服务条款的自动化（游戏外挂、刷单刷量、绕过人机验证等）。
-        使用者自行承担全部后果，详见 README 的「合法使用与免责声明」。
-        CHANGELOG_EOF
-        {
-          echo ""
-          echo "### 🔒 文件校验 (SHA-256)"
-          echo '```'
-          cat artifacts/SHA256SUMS.txt
-          echo '```'
-        } >> changelog.md
-        cat changelog.md
-
-    - name: Create Release
-      uses: softprops/action-gh-release@v1
-      with:
-        name: 自动点击器专业版 ${{ steps.get_version.outputs.version }}
-        body_path: changelog.md
-        files: |
-          ./artifacts/AutoClickerPro_Windows.zip
-          ./artifacts/AutoClickerPro_Linux.tar.gz
-          ./artifacts/SHA256SUMS.txt
-        draft: false
-        prerelease: false
-        generate_release_notes: true
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+            The unit-test job completed successfully before packaging. Download `AutoClickerPro_Windows.zip`, extract it, and run `AutoClickerPro.exe`.
+          files: artifacts/AutoClickerPro_Windows.zip
+          fail_on_unmatched_files: true
+          generate_release_notes: true
+          draft: false
+          prerelease: false

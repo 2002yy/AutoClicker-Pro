@@ -3,8 +3,24 @@
 [![Build and Release](https://github.com/2002yy/AutoClicker-Pro/actions/workflows/build.yml/badge.svg)](https://github.com/2002yy/AutoClicker-Pro/actions/workflows/build.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Platform](https://img.shields.io/badge/platform-Windows-blue)](https://github.com/2002yy/AutoClicker-Pro/releases)
+> Portfolio note: personal productivity tool project — CI, packaging, encryption and testing focused.
+> 作品集说明：个人效率工具项目，重点展示 CI、打包、加密和测试能力。
+
 
 **一款基于 Python 的 Windows 连点器。支持鼠标连点、鼠标宏录制与回放、全局快捷键与宏文件本地加密存储。**
+
+## Responsible Use
+
+This tool is intended for personal productivity automation, accessibility experiments, UI testing and repetitive desktop workflow automation.
+
+Do not use it to violate software terms of service, bypass anti-cheat systems, automate online games, or perform abusive behavior on third-party services.
+
+## 合规使用说明
+
+本工具用于个人效率自动化、无障碍操作实验、桌面 UI 测试和重复流程辅助。
+
+请勿用于违反软件服务条款、绕过反作弊、在线游戏作弊、批量刷接口或其他滥用场景。
+
 
 ---
 
@@ -64,6 +80,15 @@ python pack.py
 > 录制期间，落在本程序窗口内的点击会被自动忽略，因此点击"停止录制"按钮本身不会被录进宏里。同时会捕获键盘按键（F8/F10/F11/ESC 等控制键除外），回放时一并执行。
 
 ---
+## Engineering Highlights
+
+- Layered structure: config / core / ui / utils
+- Macro recording and playback with millisecond precision
+- Fernet encrypted macro storage
+- PyInstaller single-file EXE packaging
+- GitHub Actions build workflow
+- 43 unit tests
+
 
 ## 项目结构
 
@@ -140,3 +165,12 @@ python -m unittest discover tests -v
 ## 许可证
 
 MIT License — 详见 [LICENSE](LICENSE)
+
+## Roadmap
+
+- [ ] Macro editing UI
+- [ ] Scheduled auto-click tasks
+- [ ] Multi-profile macro management
+- [ ] Hotkey customization
+- [ ] Internationalization (i18n)
+
