@@ -58,6 +58,10 @@ class ClickerEngine:
         # 录制过滤钩子：接收 (x, y)，返回 True 表示该点击不计入录制。
         # UI 层用它来排除用户点击本程序窗口（例如"停止录制"按钮）的动作。
         self.ignore_click_predicate: Optional[Callable[[int, int], bool]] = None
+
+        # 录制通知节流：100ms 内只触发一次 UI 更新，避免高频录制时闪烁。
+        self._recording_notify_throttle_ms: int = 100
+        self._last_recording_notify_time: float = 0.0
     
     # ==================== 属性（线程安全） ====================
     
@@ -102,12 +106,15 @@ class ClickerEngine:
     # ==================== 回调设置 ====================
 
     def set_callbacks(self, on_status_change: Callable[[str], None] = None,
-                      on_recording_update: Callable[[List[ClickAction]], None] = None):
+                      on_recording_update: Callable[[List[ClickAction]], None] = None,
+                      recording_notify_throttle_ms: int = None):
         """设置回调函数"""
         if on_status_change is not None:
             self.on_status_change = on_status_change
         if on_recording_update is not None:
             self.on_recording_update = on_recording_update
+        if recording_notify_throttle_ms is not None:
+            self._recording_notify_throttle_ms = recording_notify_throttle_ms
 
     # ==================== 自动点击逻辑 ====================
     
@@ -312,10 +319,20 @@ class ClickerEngine:
         
         with self._lock:
             self.click_sequence.append(click_action)
-        
-        # 通知 UI 更新
+
+        # 节流通知 UI：100ms 内只触发一次，避免高频录制闪烁
+        self._maybe_notify_recording()
+
+    def _maybe_notify_recording(self):
+        """节流录制通知（100ms 内最多触发一次）"""
+        now = time.time()
+        if now - self._last_recording_notify_time < self._recording_notify_throttle_ms / 1000.0:
+            return
+        self._last_recording_notify_time = now
         if self.on_recording_update:
-            self.on_recording_update(self.click_sequence.copy())
+            with self._lock:
+                snapshot = list(self.click_sequence)
+            self.on_recording_update(snapshot)
     
     def _on_key_press(self, key):
         """键盘按键回调 - ESC 停止录制，其余按键作为键盘动作录制"""
@@ -342,9 +359,9 @@ class ClickerEngine:
         
         with self._lock:
             self.click_sequence.append(action)
-        
-        if self.on_recording_update:
-            self.on_recording_update(self.click_sequence.copy())
+
+        # 节流通知 UI
+        self._maybe_notify_recording()
     
     # ==================== 宏文件操作 ====================
     

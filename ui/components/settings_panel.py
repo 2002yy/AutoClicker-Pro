@@ -50,11 +50,11 @@ class SettingsPanel(ttk.Frame):
         self._create_input_row(4, "重复间隔 (毫秒):", "repeat_interval",
                                str(DEFAULT_REPEAT_INTERVAL))
     
-    def _create_input_row(self, row: int, label_text: str, 
+    def _create_input_row(self, row: int, label_text: str,
                           var_name: str, default_value: str):
         """
         创建一行输入控件
-        
+
         Args:
             row: 行号
             label_text: 标签文本
@@ -64,18 +64,29 @@ class SettingsPanel(ttk.Frame):
         # 标签
         label = ttk.Label(self, text=label_text, font=(FONT_FAMILY, FONT_SIZE_NORMAL))
         label.grid(row=row, column=0, sticky=GRID_STICKY_W, pady=PADDING_SMALL)
-        
+
         # 变量
         var = tk.StringVar(value=default_value)
         self.variables[var_name] = var
-        
-        # 输入框
+
+        # 输入框（只允许输入数字）
         entry = ttk.Entry(self, textvariable=var)
-        entry.grid(row=row, column=1, sticky=GRID_STICKY_E, 
+        entry.grid(row=row, column=1, sticky=GRID_STICKY_E,
                    pady=PADDING_SMALL, padx=(PADDING_STANDARD, 0))
-        
+        # 绑定输入校验：只允许数字和退格键
+        var.trace_add('write', lambda *args: self._validate_input(var_name))
+
         # 配置列权重使输入框可以扩展
         self.columnconfigure(1, weight=1)
+
+    def _validate_input(self, var_name: str):
+        """输入校验：自动过滤非数字字符"""
+        var = self.variables[var_name]
+        value = var.get()
+        # 移除所有非数字字符（保留空字符串）
+        cleaned = ''.join(c for c in value if c.isdigit())
+        if cleaned != value:
+            var.set(cleaned)
     
     def get_values(self) -> Dict[str, int]:
         """
@@ -137,14 +148,20 @@ class SettingsPanel(ttk.Frame):
     def validate(self) -> tuple:
         """
         验证所有输入
-        
+
         Returns:
             (是否有效，错误消息)
         """
         from config.validation import validate_time_inputs
-        
+
+        # 检查是否有空输入
+        for name, var in self.variables.items():
+            value = var.get()
+            if not value or value.strip() == '':
+                return False, f"{name} 不能为空"
+
         values = self.get_values()
-        
+
         return validate_time_inputs(
             interval_ms=values.get('interval_ms', 0),
             record_interval=values.get('record_interval', 0),
