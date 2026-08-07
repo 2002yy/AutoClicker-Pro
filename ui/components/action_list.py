@@ -71,17 +71,21 @@ class ActionList(ttk.Frame):
     def update_actions(self, actions: List[Dict[str, Any]]):
         """
         更新动作列表
-        
+
         Args:
             actions: 宏动作列表
         """
         # 清空现有项目
         self.listbox.delete(0, tk.END)
-        
+
         # 添加新项目
         for i, action in enumerate(actions):
             action_str = self._format_action(i + 1, action)
             self.listbox.insert(tk.END, action_str)
+
+        # 录制时自动滚动到底部，让用户看到最新动作
+        if actions:
+            self.listbox.see(tk.END)
     
     def _format_action(self, index: int, action: Dict[str, Any]) -> str:
         """
