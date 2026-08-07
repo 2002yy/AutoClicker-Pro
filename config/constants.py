@@ -102,6 +102,7 @@ STATUS_RECORDING = "正在录制鼠标/键盘... 按 ESC 停止"
 STATUS_RECORDING_STOPPED = "录制已停止"
 STATUS_LOADING = "加载中..."
 STATUS_SAVING = "保存中..."
+STATUS_ENCRYPTION_NOTICE = "🔐 加密存储为本地混淆保护，非机密级安全"
 
 # ==================== 错误消息 ====================
 ERROR_INVALID_INPUT = "输入错误"

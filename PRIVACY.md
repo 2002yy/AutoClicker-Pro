@@ -27,3 +27,19 @@ Both are stored entirely on the user's machine. No data ever leaves the local en
 | `pyinstaller` | Packaging (dev only) | None |
 
 None of these dependencies include network communication, telemetry, or data collection.
+
+## 加密保护级别
+
+本软件使用 Fernet 对称加密对本地宏文件进行加密存储。
+
+**加密仅为本地混淆保护，非机密级安全。**
+
+- 加密密钥以明文存储在 `~/.autoclicker_pro/.key`
+- 同账户下可访问该目录的程序可读取密钥并解密数据
+- 适用于防止意外泄露，不适用于保护高敏感数据
+
+## 安全声明
+
+- 本软件不收集、传输或存储任何个人数据
+- 所有数据仅保存在本地机器上
+- 加密设计目标为防君子不防小人

@@ -8,9 +8,9 @@ from tkinter import ttk
 from typing import Optional
 
 from config.constants import (
-    FONT_FAMILY, FONT_SIZE_NORMAL,
+    FONT_FAMILY, FONT_SIZE_NORMAL, FONT_SIZE_SMALL,
     COLOR_DARK, COLOR_DANGER, COLOR_SUCCESS, COLOR_WARNING,
-    PADDING_SMALL, STATUS_READY, STATUS_RECORDING
+    PADDING_SMALL, STATUS_READY, STATUS_RECORDING, STATUS_ENCRYPTION_NOTICE
 )
 
 
@@ -35,6 +35,15 @@ class StatusBar(ttk.Frame):
             foreground=COLOR_DARK
         )
         self.status_label.pack(anchor=tk.W)
+
+        # 加密安全提示（独立一行，灰色小字）
+        self.notice_label = ttk.Label(
+            self,
+            text=STATUS_ENCRYPTION_NOTICE,
+            font=(FONT_FAMILY, FONT_SIZE_SMALL),
+            foreground=COLOR_DISABLED
+        )
+        self.notice_label.pack(anchor=tk.W, pady=(2, 0))
     
     def set_status(self, status: str, color: Optional[str] = None):
         """
@@ -108,3 +117,8 @@ class StatusBar(ttk.Frame):
     def clear(self):
         """清空状态"""
         self.status_label.config(text="")
+
+    def set_encryption_notice(self, show: bool = True):
+        """显示或隐藏加密安全提示"""
+        self.notice_label.pack(fill=tk.X if show else None)
+        self.notice_label.config(state=tk.NORMAL if show else tk.DISABLED)
