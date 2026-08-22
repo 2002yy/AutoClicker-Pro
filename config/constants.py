@@ -6,10 +6,10 @@
 # ==================== 应用程序基础配置 ====================
 APP_NAME = "自动点击器 Pro"
 APP_VERSION = "2.5.0"
-APP_WIDTH = 450
-APP_HEIGHT = 650
-APP_MIN_WIDTH = 400
-APP_MIN_HEIGHT = 550
+APP_WIDTH = 560
+APP_HEIGHT = 700
+APP_MIN_WIDTH = 500
+APP_MIN_HEIGHT = 600
 
 # ==================== 颜色定义 ====================
 COLOR_PRIMARY = "#4A90E2"

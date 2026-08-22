@@ -31,10 +31,10 @@ class MacroLibraryPanel(ttk.LabelFrame):
         self._name_to_display = {}
         self._display_to_name = {}
 
-        # 宏名下拉框（占据剩余宽度）
-        self.combo = ttk.Combobox(self, state='readonly')
-        self.combo.grid(row=0, column=0, sticky='ew', padx=(0, PADDING_SMALL))
-        self.columnconfigure(0, weight=1)
+        # 宏名下拉框（width 提供最小请求宽度；minsize 保证窄窗口下也不被压没）
+        self.combo = ttk.Combobox(self, state="readonly", width=16)
+        self.combo.grid(row=0, column=0, sticky="ew", padx=(0, PADDING_SMALL))
+        self.columnconfigure(0, weight=1, minsize=150)
 
         self.load_button = ttk.Button(
             self, text="加载", command=self._load_selected,
