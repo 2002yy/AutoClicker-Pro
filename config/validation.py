@@ -154,17 +154,21 @@ def validate_coordinate(x: Any, y: Any) -> Tuple[bool, str]:
 
 def validate_time_inputs(interval_ms: Any, record_interval: Any,
                          hold_duration: Any, repeat_count: Any,
-                         repeat_interval: Any) -> Tuple[bool, str]:
+                         repeat_interval: Any,
+                         start_delay_s: Any = 0,
+                         auto_stop_s: Any = 0) -> Tuple[bool, str]:
     """
     验证时间相关的输入
-    
+
     Args:
         interval_ms: 点击间隔（毫秒）
         record_interval: 录制间隔（毫秒）
         hold_duration: 按住持续时间（毫秒）
         repeat_count: 重复次数
         repeat_interval: 重复间隔（毫秒）
-        
+        start_delay_s: 延迟启动（秒），0 = 立即开始
+        auto_stop_s: 自动停止（秒），0 = 不限时
+
     Returns:
         (是否有效，错误消息)
     """
@@ -177,7 +181,7 @@ def validate_time_inputs(interval_ms: Any, record_interval: Any,
     )
     if not is_valid:
         return False, error_msg
-    
+
     # 验证录制间隔
     is_valid, error_msg = validate_number(
         record_interval, "录制间隔",
@@ -187,7 +191,7 @@ def validate_time_inputs(interval_ms: Any, record_interval: Any,
     )
     if not is_valid:
         return False, error_msg
-    
+
     # 验证按住持续时间
     is_valid, error_msg = validate_number(
         hold_duration, "按住持续时间",
@@ -197,7 +201,7 @@ def validate_time_inputs(interval_ms: Any, record_interval: Any,
     )
     if not is_valid:
         return False, error_msg
-    
+
     # 验证重复次数
     is_valid, error_msg = validate_number(
         repeat_count, "重复次数",
@@ -207,7 +211,7 @@ def validate_time_inputs(interval_ms: Any, record_interval: Any,
     )
     if not is_valid:
         return False, error_msg
-    
+
     # 验证重复间隔
     is_valid, error_msg = validate_number(
         repeat_interval, "重复间隔",
@@ -217,7 +221,20 @@ def validate_time_inputs(interval_ms: Any, record_interval: Any,
     )
     if not is_valid:
         return False, error_msg
-    
+
+    # 验证延迟启动 / 自动停止
+    for field_name in ('start_delay_s', 'auto_stop_s'):
+        rules = VALIDATION_RULES[field_name]
+        label = "延迟启动" if field_name == 'start_delay_s' else "自动停止"
+        value = start_delay_s if field_name == 'start_delay_s' else auto_stop_s
+        is_valid, error_msg = validate_number(
+            value, label,
+            min_val=rules['min'], max_val=rules['max'],
+            required=rules['required']
+        )
+        if not is_valid:
+            return False, error_msg
+
     return True, ""
 
 

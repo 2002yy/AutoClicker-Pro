@@ -35,6 +35,8 @@ Do not use it to violate software terms of service, bypass anti-cheat systems, a
 - 🪟 **窗口锚定坐标** — 录制时记录点击所在的前台窗口标题与相对偏移，回放时按同名窗口当前位置重算坐标：窗口挪位/多显示器切换后宏依然点得准。找不到目标窗口时自动降级为绝对坐标并在状态栏提示（**已实现**）
 - 🔐 **加密存储** — 宏文件采用本地 Fernet 对称加密（**已实现**；密钥存于用户目录 `~/.autoclicker_pro/`，属**本地混淆级**保护，并非对抗同机攻击者的机密保护）
 - ⚙️ **灵活配置** — 毫秒级间隔、按住时长、重复次数/间隔设置（**已实现**）
+- 📚 **宏库管理** — 宏按名称保存在 `~/.autoclicker_pro/macros/`，下拉即可加载/删除，支持与任意位置 .enc 文件导出/导入（**已实现**）
+- ⏱️ **延迟启动 / 自动停止** — 开始前倒计时（等待期可随时取消），并可设置整个运行的最长时长，0 为不限（**已实现**）
 - 🔧 **全局快捷键** — F8 启停连点、F10 开始录制、F11 停止录制、ESC 一键全停，窗口失焦时同样生效（**已实现**）
 - ✏️ **宏编辑** — 对已录制的动作可删除选中 / 上移 / 下移 / 一键清空，无需为单个误触重录整条序列（**已实现**）
 - ⌨️ **快捷键自定义** — 四个全局快捷键均可在界面修改（支持 ctrl+shift+x 组合），自动持久化并在下次启动生效（**已实现**）
@@ -180,7 +182,7 @@ MIT License — 详见 [LICENSE](LICENSE)
 - [x] Hotkey customization
 - [x] Coordinate adaptation (window-title anchoring with graceful fallback)
 - [x] Mouse movement trajectory recording (smooth drags)
-- [ ] Multi-profile macro management
-- [ ] Scheduled auto-click tasks
+- [x] Multi-profile macro management
+- [x] Scheduled auto-click tasks (start delay + auto stop)
 - [ ] Internationalization (i18n)
 

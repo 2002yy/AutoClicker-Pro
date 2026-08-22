@@ -5,7 +5,7 @@
 
 # ==================== 应用程序基础配置 ====================
 APP_NAME = "自动点击器 Pro"
-APP_VERSION = "2.3.0"
+APP_VERSION = "2.4.0"
 APP_WIDTH = 450
 APP_HEIGHT = 650
 APP_MIN_WIDTH = 400
@@ -38,6 +38,8 @@ DEFAULT_RECORD_INTERVAL = 100
 DEFAULT_HOLD_DURATION = 100
 DEFAULT_REPEAT_COUNT = 1
 DEFAULT_REPEAT_INTERVAL = 1000
+DEFAULT_START_DELAY_S = 0     # 延迟启动（秒），0 = 立即开始
+DEFAULT_AUTO_STOP_S = 0       # 自动停止（秒），0 = 不限时
 
 # ==================== 时间单位换算 ====================
 MS_PER_SECOND = 1000
@@ -75,6 +77,8 @@ VALIDATION_RULES = {
     'hold_duration': {'min': 0, 'max': 5000, 'required': False},
     'repeat_count': {'min': 1, 'max': 10000, 'required': True},
     'repeat_interval': {'min': 0, 'max': 3600000, 'required': False},
+    'start_delay_s': {'min': 0, 'max': 3600, 'required': True},   # 延迟启动（秒）
+    'auto_stop_s': {'min': 0, 'max': 86400, 'required': True},    # 自动停止（秒）
     'coordinate_x': {'min': 0, 'max': None, 'required': True},  # None 表示无上限
     'coordinate_y': {'min': 0, 'max': None, 'required': True},
 }

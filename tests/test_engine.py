@@ -801,5 +801,66 @@ class TestRemoveRange(unittest.TestCase):
         self.assertEqual(len(self.engine.get_sequence()), 5)
 
 
+class TestDelayedStartAndAutoStop(unittest.TestCase):
+    """延迟启动（等待期可停止）与自动停止时限"""
+
+    def _wait_done(self, engine, timeout=5.0):
+        deadline = time.perf_counter() + timeout
+        while engine.is_running and time.perf_counter() < deadline:
+            time.sleep(0.01)
+
+    def test_start_delay_waits_before_first_action(self):
+        fake_mouse = _FakeMouseController()
+        engine = _fresh_engine(fake_mouse, MagicMock())
+        engine.click_sequence = [ClickAction(1, 1, 'left', 'press', 0.0)]
+        engine.update_config(start_delay_s=0.4, interval_ms=0, repeat_count=1)
+        started = time.perf_counter()
+        self.assertTrue(engine.start_clicking())
+        time.sleep(0.15)
+        # 延迟窗口内尚未执行任何动作
+        self.assertEqual(fake_mouse.ops, [])
+        self.assertTrue(engine.is_running)
+        self._wait_done(engine)
+        elapsed = time.perf_counter() - started
+        self.assertGreaterEqual(elapsed, 0.35)
+        self.assertIn(('press',), fake_mouse.ops)
+
+    def test_stop_during_delay_cancels_run(self):
+        fake_mouse = _FakeMouseController()
+        engine = _fresh_engine(fake_mouse, MagicMock())
+        engine.click_sequence = [ClickAction(1, 1, 'left', 'press', 0.0)]
+        engine.update_config(start_delay_s=2, interval_ms=0, repeat_count=1)
+        self.assertTrue(engine.start_clicking())
+        time.sleep(0.1)
+        engine.stop_clicking()
+        self._wait_done(engine)
+        self.assertEqual(fake_mouse.ops, [])   # 延迟期内取消：未执行任何动作
+
+    def test_auto_stop_terminates_long_run(self):
+        fake_mouse = _FakeMouseController()
+        engine = _fresh_engine(fake_mouse, MagicMock())
+        # 配对点击 × 超大重复次数 -> 无限运行，靠 auto_stop 收束。
+        # 注：时限检查在动作间隙生效；单条超长 hold 会阻塞到其自然结束。
+        engine.click_sequence = [
+            ClickAction(1, 1, 'left', 'press', 0.0),
+            ClickAction(1, 1, 'left', 'release', 0.0),
+        ]
+        engine.update_config(hold_duration=0, interval_ms=20,
+                             repeat_count=999999, auto_stop_s=0.3,
+                             start_delay_s=0)
+        started = time.perf_counter()
+        self.assertTrue(engine.start_clicking())
+        self._wait_done(engine, timeout=3.0)
+        self.assertFalse(engine.is_running)
+        elapsed = time.perf_counter() - started
+        self.assertGreaterEqual(elapsed, 0.25)
+        self.assertLess(elapsed, 2.0)
+        # 确实执行过点击，且 press/release 成对收尾于时限内
+        presses = fake_mouse.ops.count(('press',))
+        releases = fake_mouse.ops.count(('release',))
+        self.assertGreater(presses, 0)
+        self.assertEqual(presses, releases)
+
+
 if __name__ == '__main__':
     unittest.main()

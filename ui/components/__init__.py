@@ -7,6 +7,7 @@ from .action_list import ActionList
 from .control_buttons import ControlButtons
 from .status_bar import StatusBar
 from .hotkey_settings import HotkeySettings
+from .macro_library_panel import MacroLibraryPanel
 
 __all__ = [
     'SettingsPanel',
@@ -14,4 +15,5 @@ __all__ = [
     'ControlButtons',
     'StatusBar',
     'HotkeySettings',
+    'MacroLibraryPanel',
 ]

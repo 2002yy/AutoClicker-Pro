@@ -13,6 +13,7 @@ from pynput import mouse, keyboard
 from config.constants import (
     DEFAULT_INTERVAL_MS, DEFAULT_RECORD_INTERVAL,
     DEFAULT_HOLD_DURATION, DEFAULT_REPEAT_COUNT, DEFAULT_REPEAT_INTERVAL,
+    DEFAULT_START_DELAY_S, DEFAULT_AUTO_STOP_S,
     HOTKEY_START_STOP, HOTKEY_START_RECORDING,
     HOTKEY_STOP_RECORDING, HOTKEY_CANCEL,
     STATUS_RECORDING,
@@ -71,6 +72,8 @@ class ClickerEngine:
         self.hold_duration = DEFAULT_HOLD_DURATION
         self.repeat_count = DEFAULT_REPEAT_COUNT
         self.repeat_interval = DEFAULT_REPEAT_INTERVAL
+        self.start_delay_s = DEFAULT_START_DELAY_S   # 延迟启动（秒）
+        self.auto_stop_s = DEFAULT_AUTO_STOP_S       # 自动停止（秒，0=不限时）
 
         # 回调函数
         self.on_status_change: Optional[Callable[[str], None]] = None
@@ -122,7 +125,9 @@ class ClickerEngine:
     
     def update_config(self, interval_ms: Optional[int] = None, record_interval: Optional[int] = None,
                      hold_duration: Optional[int] = None, repeat_count: Optional[int] = None,
-                     repeat_interval: Optional[int] = None):
+                     repeat_interval: Optional[int] = None,
+                     start_delay_s: Optional[int] = None,
+                     auto_stop_s: Optional[int] = None):
         """更新配置参数"""
         with self._lock:
             if interval_ms is not None:
@@ -135,6 +140,10 @@ class ClickerEngine:
                 self.repeat_count = repeat_count
             if repeat_interval is not None:
                 self.repeat_interval = repeat_interval
+            if start_delay_s is not None:
+                self.start_delay_s = start_delay_s
+            if auto_stop_s is not None:
+                self.auto_stop_s = auto_stop_s
 
     # ==================== 回调设置 ====================
 
@@ -188,14 +197,41 @@ class ClickerEngine:
         if self.on_status_change:
             self.on_status_change("已停止")
     
+    def _wait_start_delay(self) -> bool:
+        """延迟启动等待；等待期间保持对停止指令的响应。
+
+        Returns:
+            True = 正常到点；False = 等待期间被停止
+        """
+        delay = self.start_delay_s
+        if delay <= 0:
+            return True
+        if self.on_status_change:
+            self.on_status_change(f"{delay} 秒后开始...")
+        end = time.perf_counter() + delay
+        while self.is_running:
+            remaining = end - time.perf_counter()
+            if remaining <= 0:
+                return True
+            time.sleep(min(0.1, remaining))
+        return False
+
     def _execute_clicking(self):
         """执行点击操作的核心方法（在工作线程中运行）
 
         时序策略：
         - 序列中存在非零时间戳（录制产生）→ 按时间戳原速回放，每轮重复重新对齐；
         - 全零时间戳（旧文件/手工构造）→ 退回固定 interval_ms 间隔回放。
+        auto_stop_s > 0 时整个运行限时，到点即停。
         """
         try:
+            if not self._wait_start_delay():
+                return
+
+            stop_deadline: Optional[float] = None
+            if self.auto_stop_s > 0:
+                stop_deadline = time.perf_counter() + self.auto_stop_s
+
             sequence = list(self.click_sequence)
             paired = self._pair_press_releases(sequence)
             use_timestamps = any(a.timestamp > 0 for a in sequence)
@@ -204,10 +240,15 @@ class ClickerEngine:
             for rep in range(self.repeat_count):
                 if not self.is_running:
                     break
+                if stop_deadline is not None and time.perf_counter() >= stop_deadline:
+                    break
 
                 start = time.perf_counter()
                 for index, action in enumerate(sequence):
                     if not self.is_running:
+                        break
+                    if (stop_deadline is not None
+                            and time.perf_counter() >= stop_deadline):
                         break
                     if use_timestamps:
                         # 对齐到录制时刻；已落后则立即执行，避免误差累积

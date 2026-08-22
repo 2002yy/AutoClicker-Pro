@@ -328,5 +328,93 @@ class TestTrajectoryFolding(unittest.TestCase):
             app.on_close()
 
 
+class TestMacroLibraryFlow(unittest.TestCase):
+    """宏库端到端：保存入库 / 加载 / 删除（库目录重定向到临时目录）"""
+
+    def setUp(self):
+        import shutil
+        import tempfile
+        from unittest.mock import patch
+        self.tmp = tempfile.mkdtemp()
+        self._expand_patcher = patch(
+            'config.macro_library.os.path.expanduser', return_value=self.tmp)
+        self._expand_patcher.start()
+
+        self.root = _root_or_skip(self)
+        self.app, _ = TestApplyAndEditFlow._make_app(self.root)
+        self.shutil = shutil
+
+    def tearDown(self):
+        try:
+            self.app.on_close()
+        except Exception:
+            pass
+        _teardown_root(self.root)
+        self._expand_patcher.stop()
+        self.shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def _inject_sequence(self):
+        from core.macros import ClickAction
+        self.app.engine.click_sequence = [
+            ClickAction(1, 1, 'left', 'press', 0.0),
+            ClickAction(2, 2, 'left', 'release', 0.1),
+        ]
+        self.app._refresh_actions_ui()
+
+    def test_save_to_library_and_load_back(self):
+        from unittest.mock import patch
+        from config.constants import STATUS_ENCRYPTION_NOTICE
+        self._inject_sequence()
+
+        with patch('ui.app.simpledialog.askstring', return_value='登录流程'):
+            with patch('config.macro_library.os.path.expanduser',
+                       return_value=self.tmp):
+                self.app._on_save_click()
+
+        # 下拉框已刷新并选中
+        self.assertEqual(self.app.library_panel.get_selected(), '登录流程')
+        self.assertIn('登录流程', self.app.library_panel.combo['values'])
+        self.assertIn('已保存到宏库',
+                      self.app.status_bar.status_label.cget("text"))
+
+        # 清空后从库加载回来
+        self.app.engine.clear_sequence()
+        self.app._drain_ui_queue()
+        with patch('config.macro_library.os.path.expanduser',
+                   return_value=self.tmp):
+            self.app._on_library_load('登录流程')
+        loaded = self.app.engine.get_sequence()
+        self.assertEqual([(a.x, a.y) for a in loaded], [(1, 1), (2, 2)])
+
+    def test_save_cancelled_does_not_write(self):
+        from unittest.mock import patch
+        self._inject_sequence()
+        with patch('ui.app.simpledialog.askstring', return_value=None):
+            with patch('config.macro_library.os.path.expanduser',
+                       return_value=self.tmp):
+                self.app._on_save_click()
+        self.assertFalse(self.app.library_panel.combo['values'])
+        self.assertIsNone(self.app.library_panel.get_selected())
+
+    def test_delete_requires_confirm(self):
+        from unittest.mock import patch
+        from config import macro_library
+        self._inject_sequence()
+        with patch('ui.app.simpledialog.askstring', return_value='tmp宏'):
+            self.app._on_save_click()  # expanduser 已在 setUp 打补丁
+        self.assertIn('tmp宏', macro_library.list_macros())
+
+        # 拒绝确认 -> 不删除
+        with patch('ui.app.messagebox.askyesno', return_value=False):
+            self.app._on_library_delete('tmp宏')
+        self.assertIn('tmp宏', macro_library.list_macros())
+
+        # 确认 -> 删除且下拉刷新
+        with patch('ui.app.messagebox.askyesno', return_value=True):
+            self.app._on_library_delete('tmp宏')
+        self.assertNotIn('tmp宏', macro_library.list_macros())
+        self.assertIsNone(self.app.library_panel.get_selected())
+
+
 if __name__ == "__main__":
     unittest.main()

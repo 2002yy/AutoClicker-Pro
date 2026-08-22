@@ -6,7 +6,7 @@
 import queue
 import gc
 import tkinter as tk
-from tkinter import ttk, messagebox, filedialog
+from tkinter import ttk, messagebox, filedialog, simpledialog
 from typing import Callable, Optional, Tuple
 
 from config.constants import (
@@ -19,10 +19,14 @@ from config.constants import (
     HOTKEY_START_STOP, HOTKEY_START_RECORDING,
     HOTKEY_STOP_RECORDING, HOTKEY_CANCEL,
 )
+from config import macro_library
 from config.settings_store import load_settings, save_settings
+from config.validation import validate_macro_sequence
 from core.engine import ClickerEngine, EngineEvent
+from core.macros import ClickAction
 from ui.components import SettingsPanel, ActionList, ControlButtons, StatusBar
 from ui.components.hotkey_settings import HotkeySettings, HOTKEY_FIELDS
+from ui.components.macro_library_panel import MacroLibraryPanel
 from ui.theme import apply_win11_theme
 from utils.hotkey_manager import HotkeyManager
 
@@ -134,7 +138,7 @@ class AutoClickerApp:
         self.root.columnconfigure(0, weight=1)
         self.root.rowconfigure(0, weight=1)
         main_frame.columnconfigure(0, weight=1)
-        main_frame.rowconfigure(5, weight=1)
+        main_frame.rowconfigure(6, weight=1)
 
         # 标题 + 快捷键提示
         self._create_title(main_frame)
@@ -151,18 +155,29 @@ class AutoClickerApp:
         self.control_buttons.set_record_callback(self._on_record_click)
         self.control_buttons.set_click_callback(self._on_click_click)
         self.control_buttons.set_save_callback(self._on_save_click)
-        self.control_buttons.set_load_callback(self._on_load_click)
+
+        # 宏库面板（加载/删除/导出/导入）
+        self.library_panel = MacroLibraryPanel(
+            main_frame,
+            on_load=self._on_library_load,
+            on_delete=self._on_library_delete,
+            on_export=self._on_export_click,
+            on_import=self._on_import_click,
+        )
+        self.library_panel.grid(row=4, column=0, sticky="ew",
+                                pady=(0, PADDING_STANDARD))
+        self._refresh_macro_library()
 
         # 全局快捷键自定义区
         self.hotkey_settings = HotkeySettings(main_frame,
                                               on_apply=self._apply_hotkeys)
         self.hotkey_settings.set_values(self.hotkeys)
-        self.hotkey_settings.grid(row=4, column=0, sticky="ew",
+        self.hotkey_settings.grid(row=5, column=0, sticky="ew",
                                   pady=(0, PADDING_STANDARD))
 
         # 动作列表（占据剩余空间）
         self.action_list = ActionList(main_frame)
-        self.action_list.grid(row=5, column=0, sticky="nsew", pady=(0, PADDING_STANDARD))
+        self.action_list.grid(row=6, column=0, sticky="nsew", pady=(0, PADDING_STANDARD))
         self.action_list.set_edit_callbacks(
             on_delete=self._on_delete_action,
             on_move_up=lambda: self._on_move_action(-1),
@@ -173,7 +188,11 @@ class AutoClickerApp:
 
         # 状态栏
         self.status_bar = StatusBar(main_frame)
-        self.status_bar.grid(row=6, column=0, sticky="ew")
+        self.status_bar.grid(row=7, column=0, sticky="ew")
+
+    def _refresh_macro_library(self):
+        """重新列举宏库并刷新下拉框"""
+        self.library_panel.refresh(macro_library.list_macros())
 
     def _hotkey_hint_text(self) -> str:
         """根据当前生效的快捷键动态生成提示文案"""
@@ -391,35 +410,95 @@ class AutoClickerApp:
             self.engine.stop_clicking()
     
     def _on_save_click(self):
-        """保存按钮点击处理"""
+        """保存当前序列到宏库（重名需确认覆盖）"""
+        if len(self.engine.get_sequence()) == 0:
+            messagebox.showwarning("警告", "没有可保存的动作序列")
+            return
+
+        name = simpledialog.askstring(
+            "保存到宏库", "宏名称：", parent=self.root)
+        if name is None:
+            return  # 用户取消
+        clean = macro_library.sanitize_name(name)
+        if not clean:
+            messagebox.showerror("保存失败", "宏名称无效")
+            return
+
+        if macro_library.macro_exists(clean) and not messagebox.askyesno(
+                "覆盖确认", f"宏“{clean}”已存在，是否覆盖？"):
+            return
+
+        try:
+            actions_data = [a.to_dict() for a in self.engine.get_sequence()]
+            is_valid, error_msg = validate_macro_sequence(actions_data)
+            if not is_valid:
+                raise ValueError(error_msg)
+            used_name = macro_library.save_to_library(clean, actions_data)
+            self._refresh_macro_library()
+            self.library_panel.select(used_name)
+            self.status_bar.set_success(f"已保存到宏库：{used_name}")
+        except Exception as e:
+            self.status_bar.set_error(str(e))
+            messagebox.showerror("保存失败", f"无法保存到宏库：{e}")
+
+    def _on_library_load(self, name: str):
+        """从宏库加载选中的宏"""
+        try:
+            data = macro_library.load_from_library(name)
+            is_valid, error_msg = validate_macro_sequence(data)
+            if not is_valid:
+                raise ValueError(error_msg)
+            self.engine.click_sequence = [
+                ClickAction.from_dict(d) for d in data]
+            self._refresh_actions_ui(select=0)
+            self.status_bar.set_success(f"已加载宏：{name}")
+        except Exception as e:
+            self.status_bar.set_error(str(e))
+            messagebox.showerror("加载失败", f"无法加载宏“{name}”：{e}")
+
+    def _on_library_delete(self, name: str):
+        """删除宏库中选中的宏（需确认）"""
+        if not messagebox.askyesno(
+                "删除宏", f"确定删除宏库中的“{name}”？此操作不可恢复。"):
+            return
+        if macro_library.delete_macro(name):
+            self._refresh_macro_library()
+            self.status_bar.set_success(f"已删除宏：{name}")
+        else:
+            messagebox.showerror("删除失败", f"无法删除宏“{name}”")
+
+    def _on_export_click(self):
+        """把当前序列导出为任意位置的 .enc 文件"""
+        if len(self.engine.get_sequence()) == 0:
+            messagebox.showwarning("警告", "没有可导出的动作序列")
+            return
         filepath = filedialog.asksaveasfilename(
             defaultextension=".enc",
             filetypes=[("加密宏文件", "*.enc"), ("所有文件", "*.*")]
         )
-        
-        if filepath:
-            try:
-                self.status_bar.set_saving()
-                self.engine.save_sequence(filepath)
-                self.status_bar.set_success("保存成功")
-            except Exception as e:
-                self.status_bar.set_error(str(e))
-                messagebox.showerror("保存失败", f"无法保存文件：{str(e)}")
-    
-    def _on_load_click(self):
-        """加载按钮点击处理"""
+        if not filepath:
+            return
+        try:
+            self.engine.save_sequence(filepath)
+            self.status_bar.set_success(f"已导出：{filepath}")
+        except Exception as e:
+            self.status_bar.set_error(str(e))
+            messagebox.showerror("导出失败", f"无法导出文件：{e}")
+
+    def _on_import_click(self):
+        """从任意位置的 .enc 文件导入序列到编辑区"""
         filepath = filedialog.askopenfilename(
             filetypes=[("加密宏文件", "*.enc"), ("所有文件", "*.*")]
         )
-        
-        if filepath:
-            try:
-                self.status_bar.set_loading()
-                self.engine.load_sequence(filepath)
-                self.status_bar.set_success("加载成功")
-            except Exception as e:
-                self.status_bar.set_error(str(e))
-                messagebox.showerror("加载失败", f"无法加载文件：{str(e)}")
+        if not filepath:
+            return
+        try:
+            self.engine.load_sequence(filepath)
+            self._refresh_actions_ui(select=0)
+            self.status_bar.set_success(f"已导入：{filepath}")
+        except Exception as e:
+            self.status_bar.set_error(str(e))
+            messagebox.showerror("导入失败", f"无法导入文件：{e}")
     
     def _update_engine_config(self):
         """更新引擎配置"""
@@ -429,7 +508,9 @@ class AutoClickerApp:
             record_interval=values.get('record_interval'),
             hold_duration=values.get('hold_duration'),
             repeat_count=values.get('repeat_count'),
-            repeat_interval=values.get('repeat_interval')
+            repeat_interval=values.get('repeat_interval'),
+            start_delay_s=values.get('start_delay_s'),
+            auto_stop_s=values.get('auto_stop_s')
         )
 
     # ==================== 序列编辑 ====================

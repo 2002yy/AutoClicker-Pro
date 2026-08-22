@@ -11,6 +11,7 @@ from config.constants import (
     FONT_FAMILY, FONT_SIZE_NORMAL,
     DEFAULT_INTERVAL_MS, DEFAULT_RECORD_INTERVAL,
     DEFAULT_HOLD_DURATION, DEFAULT_REPEAT_COUNT, DEFAULT_REPEAT_INTERVAL,
+    DEFAULT_START_DELAY_S, DEFAULT_AUTO_STOP_S,
     PADDING_STANDARD, PADDING_SMALL,
     GRID_STICKY_W, GRID_STICKY_E
 )
@@ -49,6 +50,14 @@ class SettingsPanel(ttk.Frame):
         # 重复间隔
         self._create_input_row(4, "重复间隔 (毫秒):", "repeat_interval",
                                str(DEFAULT_REPEAT_INTERVAL))
+
+        # 延迟启动（秒）
+        self._create_input_row(5, "延迟启动 (秒):", "start_delay_s",
+                               str(DEFAULT_START_DELAY_S))
+
+        # 自动停止（秒）
+        self._create_input_row(6, "自动停止 (秒, 0不限):", "auto_stop_s",
+                               str(DEFAULT_AUTO_STOP_S))
     
     def _create_input_row(self, row: int, label_text: str,
                           var_name: str, default_value: str):
@@ -167,9 +176,11 @@ class SettingsPanel(ttk.Frame):
             record_interval=values.get('record_interval', 0),
             hold_duration=values.get('hold_duration', 0),
             repeat_count=values.get('repeat_count', 0),
-            repeat_interval=values.get('repeat_interval', 0)
+            repeat_interval=values.get('repeat_interval', 0),
+            start_delay_s=values.get('start_delay_s', 0),
+            auto_stop_s=values.get('auto_stop_s', 0)
         )
-    
+
     def reset_to_defaults(self):
         """重置为默认值"""
         self.set_values({
@@ -178,4 +189,6 @@ class SettingsPanel(ttk.Frame):
             'hold_duration': DEFAULT_HOLD_DURATION,
             'repeat_count': DEFAULT_REPEAT_COUNT,
             'repeat_interval': DEFAULT_REPEAT_INTERVAL,
+            'start_delay_s': DEFAULT_START_DELAY_S,
+            'auto_stop_s': DEFAULT_AUTO_STOP_S,
         })

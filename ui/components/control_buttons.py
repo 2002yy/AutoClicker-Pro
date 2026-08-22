@@ -28,21 +28,20 @@ class ControlButtons(ttk.Frame):
         self._on_record_click = lambda: None
         self._on_click_click = lambda: None
         self._on_save_click = lambda: None
-        self._on_load_click = lambda: None
 
         # 创建按钮
         self._create_buttons()
-    
+
     def _create_buttons(self):
         """创建所有控制按钮"""
         # 录制按钮
         self.record_button = ttk.Button(
-            self, 
-            text="开始录制", 
+            self,
+            text="开始录制",
             command=self._on_record_click
         )
         self.record_button.pack(side=tk.LEFT, padx=PADDING_SMALL)
-        
+
         # 点击按钮（主操作，使用强调色）
         self.click_button = ttk.Button(
             self,
@@ -52,23 +51,15 @@ class ControlButtons(ttk.Frame):
             style='Accent.TButton'
         )
         self.click_button.pack(side=tk.LEFT, padx=PADDING_SMALL)
-        
-        # 保存按钮
+
+        # 保存按钮（保存到宏库；导出走宏库面板的"导出"入口）
         self.save_button = ttk.Button(
             self,
-            text="保存序列",
+            text="保存到宏库",
             command=self._on_save_click,
             state=tk.DISABLED
         )
         self.save_button.pack(side=tk.LEFT, padx=PADDING_SMALL)
-        
-        # 加载按钮
-        self.load_button = ttk.Button(
-            self,
-            text="加载序列",
-            command=self._on_load_click
-        )
-        self.load_button.pack(side=tk.LEFT, padx=PADDING_SMALL)
     
     def set_record_callback(self, callback: Callable[[], None]):
         """设置录制按钮回调"""
@@ -81,10 +72,6 @@ class ControlButtons(ttk.Frame):
     def set_save_callback(self, callback: Callable[[], None]):
         """设置保存按钮回调"""
         self._on_save_click = callback
-    
-    def set_load_callback(self, callback: Callable[[], None]):
-        """设置加载按钮回调"""
-        self._on_load_click = callback
     
     def update_recording_state(self, is_recording: bool):
         """
