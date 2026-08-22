@@ -61,6 +61,30 @@ class TestMacroLibrary(unittest.TestCase):
         self.assertEqual(macro_library.load_from_library('m'), new_actions)
         self.assertEqual(macro_library.list_macros().count('m'), 1)
 
+    def test_meta_reports_action_count_and_time(self):
+        import datetime
+        macro_library.save_to_library('meta宏', _ACTIONS * 3)
+        meta = macro_library.get_macro_meta('meta宏')
+        self.assertEqual(meta['actions'], 3)
+        self.assertIsInstance(meta['mtime'], datetime.datetime)
+
+        items = macro_library.list_macros_with_meta()
+        entry = next(m for m in items if m['name'] == 'meta宏')
+        display = macro_library.format_macro_display(entry)
+        self.assertTrue(display.startswith('meta宏'))
+        self.assertIn('3 个动作', display)
+        self.assertIn('保存于', display)
+
+    def test_meta_corrupt_file_still_listed(self):
+        macro_library.save_to_library('bad', _ACTIONS)
+        with open(macro_library._macro_path('bad'), 'w') as f:
+            f.write('garbage-not-encrypted')
+        meta = macro_library.get_macro_meta('bad')
+        self.assertIsNone(meta['actions'])
+        display = macro_library.format_macro_display(
+            {'name': 'bad', 'actions': None, 'mtime': meta['mtime']})
+        self.assertIn('无法读取', display)
+
 
 if __name__ == '__main__':
     unittest.main()

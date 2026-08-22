@@ -5,9 +5,10 @@
 提供按名称的保存 / 加载 / 删除 / 列举，名称即文件名主干。
 """
 
+import datetime
 import os
 import re
-from typing import List
+from typing import Dict, List, Optional
 
 from .constants import CONFIG_DIR
 from .encryption import encrypt_macro, decrypt_macro
@@ -45,6 +46,55 @@ def list_macros() -> List[str]:
              if e.lower().endswith('.enc')
              and os.path.isfile(os.path.join(library_dir(), e))]
     return sorted(names)
+
+
+def get_macro_meta(name: str) -> Dict:
+    """读取单个宏的元数据。
+
+    Returns:
+        {'actions': 动作数（解密失败为 None）, 'mtime': 保存时间 datetime}
+    """
+    path = _macro_path(name)
+    action_count: Optional[int] = None
+    try:
+        data = decrypt_macro(path)
+        if isinstance(data, list):
+            action_count = len(data)
+    except Exception:
+        pass
+
+    try:
+        mtime = datetime.datetime.fromtimestamp(os.path.getmtime(path))
+    except OSError:
+        mtime = None
+    return {'actions': action_count, 'mtime': mtime}
+
+
+def list_macros_with_meta() -> List[Dict]:
+    """列举宏及其元数据，按名称排序。
+
+    每项：{'name', 'actions', 'mtime'}
+    """
+    metas = []
+    for name in list_macros():
+        meta = get_macro_meta(name)
+        metas.append({'name': name,
+                      'actions': meta['actions'],
+                      'mtime': meta['mtime']})
+    return metas
+
+
+def format_macro_display(meta: Dict) -> str:
+    """宏条目的展示文本：'名称 (N 个动作 · 保存于 MM-DD HH:MM)'"""
+    parts = []
+    if meta.get('actions') is not None:
+        parts.append(f"{meta['actions']} 个动作")
+    else:
+        parts.append("无法读取")
+    mtime = meta.get('mtime')
+    if mtime is not None:
+        parts.append(f"保存于 {mtime:%m-%d %H:%M}")
+    return f"{meta['name']} ({' · '.join(parts)})"
 
 
 def macro_exists(name: str) -> bool:

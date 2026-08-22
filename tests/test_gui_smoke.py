@@ -371,9 +371,12 @@ class TestMacroLibraryFlow(unittest.TestCase):
                        return_value=self.tmp):
                 self.app._on_save_click()
 
-        # 下拉框已刷新并选中
+        # 下拉框已刷新并选中（展示文本含元数据，真实名经映射还原）
         self.assertEqual(self.app.library_panel.get_selected(), '登录流程')
-        self.assertIn('登录流程', self.app.library_panel.combo['values'])
+        displays = list(self.app.library_panel.combo['values'])
+        self.assertTrue(any(d.startswith('登录流程') for d in displays),
+                        displays)
+        self.assertTrue(any('2 个动作' in d for d in displays), displays)
         self.assertIn('已保存到宏库',
                       self.app.status_bar.status_label.cget("text"))
 
@@ -414,6 +417,67 @@ class TestMacroLibraryFlow(unittest.TestCase):
             self.app._on_library_delete('tmp宏')
         self.assertNotIn('tmp宏', macro_library.list_macros())
         self.assertIsNone(self.app.library_panel.get_selected())
+
+
+class TestCoordinateEditing(unittest.TestCase):
+    """坐标微调：按钮状态门控与写回"""
+
+    def setUp(self):
+        self.root = _root_or_skip(self)
+
+    def tearDown(self):
+        _teardown_root(self.root)
+
+    def test_edit_coordinates_updates_action(self):
+        from core.macros import ClickAction
+        from unittest.mock import patch
+        app, _ = TestApplyAndEditFlow._make_app(self.root)
+        try:
+            app.engine.click_sequence = [
+                ClickAction(10, 20, 'left', 'press', 0.0),
+                ClickAction(30, 40, 'left', 'release', 0.1),
+            ]
+            app._refresh_actions_ui()
+
+            # 鼠标动作行 -> 坐标编辑按钮可用
+            app.action_list.select_index(0)
+            state = str(app.action_list.edit_button.cget("state"))
+            self.assertEqual(state, "normal")
+
+            # 键盘动作行 -> 不可用
+            app.engine.click_sequence.append(
+                ClickAction(0, 0, '', 'press', 0.2, kind='key', key='a'))
+            app._refresh_actions_ui()
+            app.action_list.select_index(2)
+            self.assertEqual(str(app.action_list.edit_button.cget("state")),
+                             "disabled")
+
+            # 折叠轨迹行 -> 不可用
+            app.engine.click_sequence = [
+                ClickAction(1, 1, 'left', 'press', 0.0),
+                ClickAction(5, 5, '', 'move', 0.05, kind='move'),
+                ClickAction(6, 6, '', 'move', 0.08, kind='move'),
+            ]
+            app._refresh_actions_ui()
+            app.action_list.select_index(1)
+            self.assertEqual(str(app.action_list.edit_button.cget("state")),
+                             "disabled")
+
+            # 打桩对话框：模拟用户确认输入
+            with patch.object(app, '_show_coord_dialog',
+                              return_value=(777, 888)):
+                app.action_list.select_index(0)
+                app._on_edit_coords()
+            action = app.engine.get_action(0)
+            self.assertEqual((action.x, action.y), (777, 888))
+
+            # 取消（返回 None）不改动
+            with patch.object(app, '_show_coord_dialog', return_value=None):
+                app._on_edit_coords()
+            action = app.engine.get_action(0)
+            self.assertEqual((action.x, action.y), (777, 888))
+        finally:
+            app.on_close()
 
 
 if __name__ == "__main__":

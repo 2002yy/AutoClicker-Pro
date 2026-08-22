@@ -40,6 +40,7 @@ Do not use it to violate software terms of service, bypass anti-cheat systems, a
 - 🔧 **全局快捷键** — F8 启停连点、F10 开始录制、F11 停止录制、ESC 一键全停，窗口失焦时同样生效（**已实现**）
 - ✏️ **宏编辑** — 对已录制的动作可删除选中 / 上移 / 下移 / 一键清空，无需为单个误触重录整条序列（**已实现**）
 - ⌨️ **快捷键自定义** — 四个全局快捷键均可在界面修改（支持 ctrl+shift+x 组合），自动持久化并在下次启动生效（**已实现**）
+- ✏️ **坐标微调** — 动作列表选中单个点击/移动动作，可直接修改落点坐标，无需重录（**已实现**）
 - 🎨 **Win11 风格界面** — 基于 ttk 的自定义浅色主题：Segoe UI 字体、蓝(#0067C0)强调色主按钮、扁平卡片与细边框（**已实现**）
 - 🚀 **便携运行** — 单文件 EXE，无需安装 Python（**已实现**）
 
@@ -56,6 +57,7 @@ Do not use it to violate software terms of service, bypass anti-cheat systems, a
 ### 直接下载（推荐）
 
 前往 [Releases 页面](https://github.com/2002yy/AutoClicker-Pro/releases) 下载最新的 `AutoClickerPro.exe`，双击即用。
+新手请先阅读 [新手教程](docs/TUTORIAL.md)（含常见问题与杀软误报说明）。
 
 ### 源码运行
 

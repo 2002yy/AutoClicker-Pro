@@ -86,6 +86,7 @@ jobs:
           New-Item -ItemType Directory -Force -Path release | Out-Null
           Copy-Item 'dist\AutoClickerPro.exe' 'release\AutoClickerPro.exe'
           Copy-Item 'README.md' 'release\README.md'
+          Copy-Item 'docs\TUTORIAL.md' 'release\TUTORIAL.md'
           if (Test-Path 'LICENSE') {
             Copy-Item 'LICENSE' 'release\LICENSE'
           }
@@ -94,11 +95,26 @@ jobs:
             throw 'Release ZIP is empty'
           }
 
+      - name: Generate SHA256 checksums
+        shell: pwsh
+        run: |
+          $zipHash = (Get-FileHash 'AutoClickerPro_Windows.zip' -Algorithm SHA256).Hash.ToLower()
+          $exeHash = (Get-FileHash 'dist\AutoClickerPro.exe' -Algorithm SHA256).Hash.ToLower()
+          $lines = @(
+            "$zipHash  AutoClickerPro_Windows.zip",
+            "$exeHash  AutoClickerPro.exe"
+          )
+          $lines | Set-Content 'SHA256SUMS.txt' -Encoding ascii
+          Write-Host "ZIP  SHA256: $zipHash"
+          Write-Host "EXE  SHA256: $exeHash"
+
       - name: Upload Windows artifact
         uses: actions/upload-artifact@v4
         with:
           name: windows-build
-          path: AutoClickerPro_Windows.zip
+          path: |
+            AutoClickerPro_Windows.zip
+            SHA256SUMS.txt
           if-no-files-found: error
           retention-days: 14
 
@@ -147,7 +163,24 @@ jobs:
             Automated Windows release built from the canonical `pack.py` entrypoint.
 
             The unit-test job completed successfully before packaging. Download `AutoClickerPro_Windows.zip`, extract it, and run `AutoClickerPro.exe`.
-          files: artifacts/AutoClickerPro_Windows.zip
+
+            ## 校验完整性
+
+            `SHA256SUMS.txt` 附于附件中。Windows PowerShell 验证：
+            ```powershell
+            Get-FileHash .\AutoClickerPro_Windows.zip -Algorithm SHA256
+            ```
+
+            ## 关于杀毒软件误报
+
+            本程序包含键盘钩子（全局快捷键）、输入模拟（连点功能）与 PyInstaller 加壳三个特征，
+            可能触发杀软启发式告警或 SmartScreen 提示，属已知误报。本程序**无网络通信、无遥测**，
+            源码完全开放可自行审计；不放心可直接源码运行。详见仓库 TUTORIAL.md 的 FAQ。
+
+            **请勿用于违反目标平台服务条款的自动化（如游戏作弊）。**
+          files: |
+            artifacts/AutoClickerPro_Windows.zip
+            artifacts/SHA256SUMS.txt
           fail_on_unmatched_files: true
           generate_release_notes: true
           draft: false

@@ -31,6 +31,7 @@ class ActionList(ttk.Frame):
         self._on_move_up = lambda: None
         self._on_move_down = lambda: None
         self._on_clear = lambda: None
+        self._on_edit_coords = lambda: None
 
         # 创建组件
         self._create_widgets()
@@ -38,12 +39,15 @@ class ActionList(ttk.Frame):
     def set_edit_callbacks(self, on_delete: Callable[[], None],
                            on_move_up: Callable[[], None],
                            on_move_down: Callable[[], None],
-                           on_clear: Callable[[], None]):
+                           on_clear: Callable[[], None],
+                           on_edit_coords: Optional[Callable[[], None]] = None):
         """注入编辑回调"""
         self._on_delete = on_delete
         self._on_move_up = on_move_up
         self._on_move_down = on_move_down
         self._on_clear = on_clear
+        if on_edit_coords is not None:
+            self._on_edit_coords = on_edit_coords
 
     def _create_widgets(self):
         """创建列表框、滚动条与编辑工具条"""
@@ -59,6 +63,11 @@ class ActionList(ttk.Frame):
                                         command=lambda: self._on_delete(),
                                         state=tk.DISABLED)
         self.delete_button.pack(side=tk.LEFT, padx=(0, PADDING_SMALL))
+
+        self.edit_button = ttk.Button(toolbar, text="编辑坐标",
+                                      command=lambda: self._on_edit_coords(),
+                                      state=tk.DISABLED)
+        self.edit_button.pack(side=tk.LEFT, padx=(0, PADDING_SMALL))
 
         self.move_up_button = ttk.Button(toolbar, text="上移",
                                          command=lambda: self._on_move_up(),
@@ -300,6 +309,11 @@ class ActionList(ttk.Frame):
         for btn in (self.delete_button, self.move_up_button,
                     self.move_down_button, self.clear_button):
             btn.config(state=state)
+
+    def set_edit_coords_state(self, enabled: bool):
+        """坐标编辑按钮独立启停（仅单个鼠标/移动类动作可选时可用）"""
+        self.edit_button.config(
+            state=tk.NORMAL if enabled else tk.DISABLED)
 
     def delete_selected(self):
         """删除选中的项目"""

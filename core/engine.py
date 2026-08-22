@@ -722,6 +722,23 @@ class ClickerEngine:
             del self.click_sequence[start:end + 1]
             return end - start + 1
 
+    def update_action_coordinates(self, index: int, x: int, y: int) -> bool:
+        """更新指定动作的坐标（仅鼠标/移动类动作有意义）；越界返回 False"""
+        with self._lock:
+            if 0 <= index < len(self.click_sequence):
+                self.click_sequence[index].x = int(x)
+                self.click_sequence[index].y = int(y)
+                return True
+        return False
+
+    def get_action(self, index: int) -> Optional[ClickAction]:
+        """获取指定下标动作的只读副本；越界返回 None"""
+        with self._lock:
+            if 0 <= index < len(self.click_sequence):
+                action = self.click_sequence[index]
+                return ClickAction.from_dict(action.to_dict())
+        return None
+
     def move_action(self, src: int, dst: int) -> bool:
         """把 src 下标的动作移动到 dst 下标（其余元素顺移）；越界返回 False"""
         with self._lock:

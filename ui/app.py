@@ -166,6 +166,8 @@ class AutoClickerApp:
         )
         self.library_panel.grid(row=4, column=0, sticky="ew",
                                 pady=(0, PADDING_STANDARD))
+        self.library_panel.combo.bind(
+            '<<ComboboxSelected>>', self._on_library_selection_changed)
         self._refresh_macro_library()
 
         # 全局快捷键自定义区
@@ -183,6 +185,7 @@ class AutoClickerApp:
             on_move_up=lambda: self._on_move_action(-1),
             on_move_down=lambda: self._on_move_action(1),
             on_clear=self._on_clear_actions,
+            on_edit_coords=self._on_edit_coords,
         )
         self.action_list.on_selection_change = self._on_list_selection_change
 
@@ -191,8 +194,30 @@ class AutoClickerApp:
         self.status_bar.grid(row=7, column=0, sticky="ew")
 
     def _refresh_macro_library(self):
-        """重新列举宏库并刷新下拉框"""
-        self.library_panel.refresh(macro_library.list_macros())
+        """重新列举宏库（含元数据）并刷新下拉框"""
+        items = {}
+        for meta in macro_library.list_macros_with_meta():
+            items[meta['name']] = macro_library.format_macro_display(meta)
+        self.library_panel.refresh(items)
+        self._update_library_detail()
+
+    def _on_library_selection_changed(self, _event=None):
+        """下拉选中变化 -> 更新元数据详情行"""
+        self._update_library_detail()
+
+    def _update_library_detail(self):
+        name = self.library_panel.get_selected()
+        if not name:
+            self.library_panel.set_detail("")
+            return
+        meta = macro_library.get_macro_meta(name)
+        parts = []
+        actions = meta.get('actions')
+        mtime = meta.get('mtime')
+        parts.append(f"{actions} 个动作" if actions is not None else "无法读取内容")
+        if mtime is not None:
+            parts.append(f"保存于 {mtime:%Y-%m-%d %H:%M}")
+        self.library_panel.set_detail(f"{name}：{' · '.join(parts)}")
 
     def _hotkey_hint_text(self) -> str:
         """根据当前生效的快捷键动态生成提示文案"""
@@ -569,6 +594,51 @@ class AutoClickerApp:
             state=tk.NORMAL if can_move and index > 0 else tk.DISABLED)
         self.action_list.move_down_button.config(
             state=tk.NORMAL if can_move and 0 <= index < rows - 1 else tk.DISABLED)
+        self._update_edit_coords_state()
+
+    def _update_edit_coords_state(self):
+        """坐标编辑仅对单个可选中的鼠标/移动类动作开放"""
+        index = self.action_list.get_selected_index()
+        rng = self.action_list.get_row_range(index)
+        editable = False
+        if rng is not None and rng[1] == rng[0]:
+            action = self.engine.get_action(rng[0])
+            editable = action is not None and action.kind in ('mouse', 'move')
+        self.action_list.set_edit_coords_state(editable)
+
+    def _show_coord_dialog(self, action: ClickAction) -> Optional[Tuple[int, int]]:
+        """弹出坐标编辑对话框；取消/非法输入返回 None"""
+        from ui.components.field_dialog import FieldDialog, int_field
+        dlg = FieldDialog(
+            self.root, "编辑坐标",
+            [("X", action.x), ("Y", action.y)],
+            validators=[int_field, int_field])
+        self.root.wait_window(dlg)
+        if dlg.result is None:
+            return None
+        try:
+            return int(dlg.result["X"]), int(dlg.result["Y"])
+        except (KeyError, ValueError):
+            return None
+
+    def _on_edit_coords(self):
+        """弹出坐标微调对话框，写回选中动作的 x/y"""
+        row_index = self.action_list.get_selected_index()
+        rng = self.action_list.get_row_range(row_index)
+        if rng is None or rng[1] != rng[0]:
+            return
+        seq_index = rng[0]
+        action = self.engine.get_action(seq_index)
+        if action is None:
+            return
+
+        coords = self._show_coord_dialog(action)
+        if coords is None:
+            return
+        new_x, new_y = coords
+        if self.engine.update_action_coordinates(seq_index, new_x, new_y):
+            self._refresh_actions_ui(select=row_index)
+            self.status_bar.set_success(f"已更新第 {seq_index + 1} 个动作的坐标")
     
     # ==================== 引擎回调 ====================
 

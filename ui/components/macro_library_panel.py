@@ -7,9 +7,10 @@
 
 import tkinter as tk
 from tkinter import ttk
-from typing import Callable, Iterable, Optional
+from typing import Callable, Optional
 
-from config.constants import FONT_FAMILY, FONT_SIZE_NORMAL, PADDING_SMALL, PADDING_STANDARD
+from config.constants import (FONT_FAMILY, FONT_SIZE_NORMAL, FONT_SIZE_SMALL,
+                              PADDING_SMALL, PADDING_STANDARD)
 
 
 class MacroLibraryPanel(ttk.LabelFrame):
@@ -25,6 +26,10 @@ class MacroLibraryPanel(ttk.LabelFrame):
         self._on_delete_cb = on_delete
         self._on_export_cb = on_export
         self._on_import_cb = on_import
+
+        # 真实宏名 <-> 展示文本（含动作数/保存时间）双向映射
+        self._name_to_display = {}
+        self._display_to_name = {}
 
         # 宏名下拉框（占据剩余宽度）
         self.combo = ttk.Combobox(self, state='readonly')
@@ -49,10 +54,21 @@ class MacroLibraryPanel(ttk.LabelFrame):
             self, text="导入", command=lambda: self._on_import_cb())
         import_button.grid(row=0, column=4)
 
+        # 选中宏的元数据详情行
+        self.detail_label = ttk.Label(self, text="", font=(FONT_FAMILY, FONT_SIZE_SMALL))
+        self.detail_label.grid(row=1, column=0, columnspan=5,
+                               sticky=tk.W, pady=(PADDING_SMALL, 0))
+
+    def set_detail(self, text: str):
+        """更新选中宏的元数据说明行"""
+        self.detail_label.config(text=text)
+
     def _selected_name(self) -> Optional[str]:
-        """当前选中的宏名；空返回 None"""
-        name = self.combo.get().strip()
-        return name or None
+        """当前选中宏的真实名称（展示文本 -> 名称映射）；空返回 None"""
+        display = self.combo.get().strip()
+        if not display:
+            return None
+        return self._display_to_name.get(display, display)
 
     def _load_selected(self):
         name = self._selected_name()
@@ -70,12 +86,22 @@ class MacroLibraryPanel(ttk.LabelFrame):
 
     def select(self, name: str):
         """把指定宏设为当前选中项（若存在于列表）"""
-        if name in self.combo['values']:
-            self.combo.set(name)
+        display = self._name_to_display.get(name)
+        if display is not None:
+            self.combo.set(display)
 
-    def refresh(self, names: Iterable[str]):
-        """刷新宏名列表；尽量保持原选中项，库空时禁用加载/删除按钮"""
-        values = list(names)
+    def refresh(self, items):
+        """刷新宏列表。
+
+        Args:
+            items: {真实宏名: 展示文本} 映射；尽量保持原选中项，
+                   库空时禁用加载/删除按钮
+        """
+        self._items = dict(items or {})
+        self._name_to_display = dict(self._items)
+        self._display_to_name = {
+            display: name for name, display in self._items.items()}
+        values = list(self._items.values())
         current = self.combo.get()
         self.combo['values'] = values
 
