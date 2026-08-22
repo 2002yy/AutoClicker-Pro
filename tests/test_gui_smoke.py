@@ -6,6 +6,7 @@ GUI 冒烟测试
 能完成一次布局计算、能干净退出"，在 CI 的 Windows job 中随单测一起执行。
 """
 
+import gc
 import sys
 import unittest
 from pathlib import Path
@@ -13,6 +14,17 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 import tkinter as tk
+
+
+def _teardown_root(root):
+    """统一清理：先在 Tcl 环境存活时回收 Tk 包装对象（StringVar 等），
+    再销毁根窗口——避免残留对象在解释器退出期跨线程回收触发
+    Tcl_AsyncDelete 硬崩溃"""
+    gc.collect()
+    try:
+        root.destroy()
+    except tk.TclError:
+        pass
 
 
 def _root_or_skip(testcase):
@@ -42,7 +54,7 @@ class TestStatusBar(unittest.TestCase):
             bar.set_encryption_notice(False)
             bar.set_encryption_notice(True)
         finally:
-            root.destroy()
+            _teardown_root(root)
 
     def test_all_status_colors_exist(self):
         import ui.components.status_bar as sb
@@ -58,10 +70,7 @@ class TestAppSmoke(unittest.TestCase):
         self.root = _root_or_skip(self)
 
     def tearDown(self):
-        try:
-            self.root.destroy()
-        except tk.TclError:
-            pass
+        _teardown_root(self.root)
 
     def test_app_boots_and_layouts(self):
         from ui.app import AutoClickerApp
@@ -134,10 +143,7 @@ class TestHotkeySettingsPanel(unittest.TestCase):
         self.panel = HotkeySettings(self.root, on_apply=lambda v: None)
 
     def tearDown(self):
-        try:
-            self.root.destroy()
-        except tk.TclError:
-            pass
+        _teardown_root(self.root)
 
     def test_valid_single_keys_pass(self):
         _fill_hotkeys(self.panel)
@@ -175,10 +181,7 @@ class TestApplyAndEditFlow(unittest.TestCase):
         self.root = _root_or_skip(self)
 
     def tearDown(self):
-        try:
-            self.root.destroy()
-        except tk.TclError:
-            pass
+        _teardown_root(self.root)
 
     @staticmethod
     def _make_app(root):

@@ -9,6 +9,12 @@
 - kind='chord'  键盘组合键：modifiers 为按住顺序的修饰键名列表，
   key 为触发键（如 Ctrl+C -> modifiers=['ctrl_l'], key='c'），回放为整体轻点。
 
+坐标锚定（仅鼠标动作，可选）：
+- anchor_title 非空时表示该点击录制自标题匹配的前台窗口，
+  x/y 存相对该窗口客户区左上角的偏移；回放时按同名窗口当前位置重算
+  绝对坐标，找不到窗口则降级为绝对坐标执行。
+- anchor_title 为空时 x/y 即绝对屏幕坐标（旧版文件语义不变）。
+
 说明：早期版本这里还有 MacroRecorder / MacroPlayer / MacroStorage 三个类，
 其能力已全部由 core.engine.ClickerEngine 实现，已于 v2.0.1 移除。
 """
@@ -28,6 +34,10 @@ class ClickAction:
     kind: str = 'mouse'           # 'mouse' | 'key' | 'chord'
     key: Optional[str] = None     # key/chord 的触发键规范键名
     modifiers: List[str] = field(default_factory=list)  # 组合键修饰键（按下顺序）
+    # 窗口锚定（仅鼠标动作）：anchor_title 非空时 x/y 为相对窗口偏移
+    anchor_title: Optional[str] = None
+    win_rel_x: Optional[int] = None
+    win_rel_y: Optional[int] = None
 
     def to_dict(self) -> Dict:
         """转换为字典"""
@@ -35,7 +45,7 @@ class ClickAction:
 
     @classmethod
     def from_dict(cls, data: Dict) -> 'ClickAction':
-        """从字典创建实例（兼容旧版无 kind/key/modifiers 字段的数据）"""
+        """从字典创建实例（兼容旧版无 kind/key/modifiers/锚定字段的数据）"""
         raw_mods = data.get('modifiers') or []
         return cls(
             x=data.get('x', 0),
@@ -46,4 +56,7 @@ class ClickAction:
             kind=data.get('kind', 'mouse'),
             key=data.get('key'),
             modifiers=list(raw_mods),
+            anchor_title=data.get('anchor_title'),
+            win_rel_x=data.get('win_rel_x'),
+            win_rel_y=data.get('win_rel_y'),
         )

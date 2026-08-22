@@ -179,9 +179,13 @@ class ActionList(ttk.Frame):
         }
         button_name = button_names.get(button, button)
         combo_suffix = f" + {mod_prefix.rstrip('+')}组合" if mods else ""
-        return (f"{index}. ({x}, {y}) {button_name}{combo_suffix} "
-                f"{action_name} @ {timestamp:.2f}s")
 
+        # 锚定窗口标记（回放时按该窗口当前位置重算坐标）
+        anchor = action.get('anchor_title')
+        anchor_suffix = f" [窗:{anchor[:8]}]" if anchor else ""
+
+        return (f"{index}. ({x}, {y}) {button_name}{combo_suffix} "
+                f"{action_name} @ {timestamp:.2f}s{anchor_suffix}")
     @staticmethod
     def _format_modifier(name: str) -> str:
         """修饰键名转显示名并带连接符（ctrl_l -> 'Ctrl+'）"""

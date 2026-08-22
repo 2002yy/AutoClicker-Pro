@@ -22,6 +22,8 @@ from config.validation import (
     validate_time_inputs, validate_macro_sequence, is_modifier_name
 )
 from core.macros import ClickAction
+from utils import win_windows
+from utils.win_windows import WindowRect
 
 
 class EngineEvent(enum.Enum):
@@ -78,6 +80,12 @@ class ClickerEngine:
         # 录制时需跳过的键名（全局快捷键），避免把控制键录进宏。
         # 实例级副本：用户自定义快捷键时由 set_skip_key_names 更新。
         self._skip_key_names: set = set(self._SKIP_KEY_NAMES)
+
+        # 窗口锚定：录制时取前台窗口信息、回放时按标题重定位窗口。
+        # 可注入替换（测试/特殊环境），非 Windows 平台为返回 None 的空实现。
+        self.foreground_provider = win_windows.get_foreground_window_info
+        self.window_locater = win_windows.find_client_rect_by_title
+        self._anchor_warned: set = set()
 
         # 录制通知节流：100ms 内只触发一次 UI 更新，避免高频录制时闪烁。
         self._recording_notify_throttle_ms: int = 100
@@ -186,6 +194,7 @@ class ClickerEngine:
             sequence = list(self.click_sequence)
             paired = self._pair_press_releases(sequence)
             use_timestamps = any(a.timestamp > 0 for a in sequence)
+            self._anchor_warned = set()
 
             for rep in range(self.repeat_count):
                 if not self.is_running:
@@ -308,6 +317,33 @@ class ClickerEngine:
         finally:
             self._release_modifiers(action.modifiers)
 
+    def _resolve_anchor(self, action) -> Tuple[int, int]:
+        """把鼠标动作解析为屏幕绝对坐标。
+
+        带窗口锚定时按同名窗口当前位置重算；找不到窗口则降级为
+        绝对坐标执行，并对每个标题只发一次状态栏警告。
+        """
+        if (action.anchor_title
+                and action.win_rel_x is not None
+                and action.win_rel_y is not None):
+            rect: Optional[WindowRect] = None
+            locater = self.window_locater
+            if locater is not None:
+                try:
+                    rect = locater(action.anchor_title)
+                except Exception:
+                    rect = None
+            if rect is not None:
+                return (rect.left + action.win_rel_x,
+                        rect.top + action.win_rel_y)
+            if action.anchor_title not in self._anchor_warned:
+                self._anchor_warned.add(action.anchor_title)
+                if self.on_status_change:
+                    self.on_status_change(
+                        f"未找到窗口“{action.anchor_title}”，"
+                        "相关动作已按绝对坐标执行")
+        return action.x, action.y
+
     def _perform_mouse_action(self, action, paired: bool):
         """执行单个鼠标事件。paired=True 表示序列中存在其对应的 release。"""
         mods = action.modifiers or []
@@ -323,7 +359,8 @@ class ClickerEngine:
         if action.action_type == 'press':
             self._press_modifiers(mods)
             try:
-                self.mouse_controller.position = (action.x, action.y)
+                x, y = self._resolve_anchor(action)
+                self.mouse_controller.position = (x, y)
                 self.mouse_controller.press(btn)
                 if paired:
                     # 拖拽/按住场景：保持按下状态，等待时间轴上的 release
@@ -335,7 +372,8 @@ class ClickerEngine:
                 if not paired:
                     self._release_modifiers(mods)
         elif action.action_type == 'release':
-            self.mouse_controller.position = (action.x, action.y)
+            x, y = self._resolve_anchor(action)
+            self.mouse_controller.position = (x, y)
             self.mouse_controller.release(btn)
             if mods:
                 self._release_modifiers(mods)
@@ -468,9 +506,29 @@ class ClickerEngine:
             mods = self._current_modifiers()
             self._mark_modifiers_used()
 
+        # 窗口锚定：点击落在前台窗口客户区内时，记录标题与相对偏移
+        anchor_title: Optional[str] = None
+        rel_x: Optional[int] = None
+        rel_y: Optional[int] = None
+        provider = self.foreground_provider
+        if provider is not None:
+            try:
+                info: Optional[WindowRect] = provider()
+            except Exception:
+                info = None
+            if (info is not None
+                    and info.left <= x < info.right
+                    and info.top <= y < info.bottom):
+                anchor_title = info.title
+                rel_x = x - info.left
+                rel_y = y - info.top
+
         timestamp = time.time() - self.recording_start_time
         click_action = ClickAction(x, y, button_name, action_type, timestamp,
-                                   modifiers=mods)
+                                   modifiers=mods,
+                                   anchor_title=anchor_title,
+                                   win_rel_x=rel_x,
+                                   win_rel_y=rel_y)
         self._append_action(click_action)
 
     def _maybe_notify_recording(self):

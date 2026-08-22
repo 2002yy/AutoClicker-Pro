@@ -177,5 +177,36 @@ class TestChordAndModifierValidation(unittest.TestCase):
             self.assertFalse(is_modifier_name(name))
 
 
+class TestAnchorValidation(unittest.TestCase):
+    """窗口锚定字段校验"""
+
+    def _mouse(self, **extra):
+        action = {'x': 1, 'y': 2, 'button': 'left', 'action_type': 'press'}
+        action.update(extra)
+        return validate_macro_action(action)
+
+    def test_full_anchor_fields_accepted(self):
+        ok, msg = self._mouse(anchor_title='记事本', win_rel_x=10, win_rel_y=20)
+        self.assertTrue(ok, msg)
+
+    def test_no_anchor_fields_accepted(self):
+        ok, msg = self._mouse()
+        self.assertTrue(ok, msg)
+
+    def test_partial_anchor_rejected(self):
+        ok, _ = self._mouse(anchor_title='记事本', win_rel_x=10)  # 缺 rel_y
+        self.assertFalse(ok)
+
+    def test_empty_title_rejected(self):
+        ok, _ = self._mouse(anchor_title='  ', win_rel_x=10, win_rel_y=20)
+        self.assertFalse(ok)
+
+    def test_non_int_rel_rejected(self):
+        ok, _ = self._mouse(anchor_title='记事本', win_rel_x='a', win_rel_y=20)
+        self.assertFalse(ok)
+        ok, _ = self._mouse(anchor_title='记事本', win_rel_x=True, win_rel_y=20)
+        self.assertFalse(ok)
+
+
 if __name__ == '__main__':
     unittest.main()

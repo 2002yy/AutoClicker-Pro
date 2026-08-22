@@ -19,6 +19,12 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from core.engine import ClickerEngine, ClickAction
 from config.encryption import EncryptionManager
 from config.validation import validate_macro_sequence
+from utils.win_windows import WindowRect
+
+
+def _win(title, left, top, right, bottom) -> WindowRect:
+    """窗口矩形测试替身构造器"""
+    return WindowRect(title=title, left=left, top=top, right=right, bottom=bottom)
 
 
 def _fresh_engine(mouse_mock, kb_mock):
@@ -511,6 +517,19 @@ class TestModifiersModelRoundtrip(unittest.TestCase):
         )
         self.assertEqual(restored.modifiers, [])
 
+    def test_anchor_roundtrip_via_dict(self):
+        action = ClickAction(110, 120, 'left', 'press', 0.5,
+                             anchor_title='记事本', win_rel_x=10, win_rel_y=20)
+        restored = ClickAction.from_dict(action.to_dict())
+        self.assertEqual(restored.anchor_title, '记事本')
+        self.assertEqual((restored.win_rel_x, restored.win_rel_y), (10, 20))
+
+    def test_legacy_dict_without_anchor(self):
+        restored = ClickAction.from_dict(
+            {'x': 1, 'y': 2, 'button': 'left', 'action_type': 'press'})
+        self.assertIsNone(restored.anchor_title)
+        self.assertIsNone(restored.win_rel_x)
+
 
 class TestSequenceEditing(unittest.TestCase):
     """序列编辑：删除 / 移动 / 清空（线程安全方法）"""
@@ -547,6 +566,110 @@ class TestSequenceEditing(unittest.TestCase):
         seq = self.engine.get_sequence()
         seq.clear()
         self.assertEqual(len(self.engine.get_sequence()), 3)
+
+
+class TestAnchorRecording(unittest.TestCase):
+    """窗口锚定录制：点击落在前台窗口客户区内时记录标题与相对偏移"""
+
+    def setUp(self):
+        self.engine = _fresh_engine(MagicMock(), MagicMock())
+        self.engine.is_recording = True
+        self.engine.recording_start_time = time.time()
+        self.engine.click_sequence = []
+        self.engine.foreground_provider = (
+            lambda: _win('记事本 - 无标题', 100, 50, 600, 400))
+
+    def _click(self, x, y):
+        from pynput import mouse
+        self.engine._on_mouse_click(x, y, mouse.Button.left, True)
+
+    def test_click_inside_window_captures_anchor(self):
+        self._click(150, 100)
+        action = self.engine.click_sequence[0]
+        self.assertEqual(action.anchor_title, '记事本 - 无标题')
+        self.assertEqual(action.win_rel_x, 50)   # 150-100
+        self.assertEqual(action.win_rel_y, 50)   # 100-50
+        # 绝对坐标仍保留，供降级路径使用
+        self.assertEqual((action.x, action.y), (150, 100))
+
+    def test_click_outside_window_no_anchor(self):
+        self.engine.foreground_provider = (
+            lambda: _win('记事本', 1000, 1000, 1400, 1300))
+        self._click(150, 100)
+        action = self.engine.click_sequence[0]
+        self.assertIsNone(action.anchor_title)
+        self.assertIsNone(action.win_rel_x)
+
+    def test_provider_none_no_anchor(self):
+        self.engine.foreground_provider = lambda: None
+        self._click(150, 100)
+        self.assertIsNone(self.engine.click_sequence[0].anchor_title)
+
+    def test_provider_exception_does_not_break_recording(self):
+        def boom():
+            raise RuntimeError('win32 unavailable')
+        self.engine.foreground_provider = boom
+        self._click(150, 100)
+        self.assertEqual(len(self.engine.click_sequence), 1)
+        self.assertIsNone(self.engine.click_sequence[0].anchor_title)
+
+
+class TestAnchorPlayback(unittest.TestCase):
+    """窗口锚定回放：按同名窗口当前位置重算绝对坐标；找不到降级+警告"""
+
+    def setUp(self):
+        self.fake_mouse = _FakeMouseController()
+        self.engine = _fresh_engine(self.fake_mouse, MagicMock())
+        self.status_messages: list = []
+        self.engine.on_status_change = self.status_messages.append
+
+    def _anchored_sequence(self):
+        return [
+            ClickAction(110, 120, 'left', 'press', 0.0,
+                        win_rel_x=10, win_rel_y=20, anchor_title='记事本'),
+            ClickAction(110, 120, 'left', 'release', 0.1,
+                        win_rel_x=10, win_rel_y=20, anchor_title='记事本'),
+        ]
+
+    def _run(self):
+        self.assertTrue(self.engine.start_clicking())
+        deadline = time.perf_counter() + 3.0
+        while self.engine.is_running and time.perf_counter() < deadline:
+            time.sleep(0.01)
+
+    def test_repositions_to_moved_window(self):
+        # 录制时窗口在 (100,100)，回放时挪到 (200,300)：相对偏移应保持
+        self.engine.window_locater = (
+            lambda title: _win(title, 200, 300, 700, 600))
+        self.engine.click_sequence = self._anchored_sequence()
+        self.engine.update_config(hold_duration=0, interval_ms=0, repeat_count=1)
+        self._run()
+        moves = [op[1] for op in self.fake_mouse.ops if op[0] == 'move']
+        self.assertEqual(moves[0], (210, 320))  # 200+10, 300+20
+
+    def test_missing_window_falls_back_and_warns_once(self):
+        self.engine.window_locater = lambda title: None
+        self.engine.click_sequence = self._anchored_sequence()
+        self.engine.update_config(hold_duration=0, interval_ms=0, repeat_count=1)
+        self._run()
+        # 降级：按录制时的绝对坐标执行
+        moves = [op[1] for op in self.fake_mouse.ops if op[0] == 'move']
+        self.assertEqual(moves[0], (110, 120))
+        # 同一标题只警告一次
+        warnings = [m for m in self.status_messages if '记事本' in m]
+        self.assertEqual(len(warnings), 1)
+        self.assertIn('未找到窗口', warnings[0])
+
+    def test_unanchored_action_no_warning(self):
+        self.engine.window_locater = lambda title: None
+        self.engine.click_sequence = [
+            ClickAction(55, 66, 'left', 'press', 0.0),
+            ClickAction(55, 66, 'left', 'release', 0.05),
+        ]
+        self.engine.update_config(hold_duration=0, interval_ms=0, repeat_count=1)
+        self._run()
+        warnings = [m for m in self.status_messages if '未找到窗口' in m]
+        self.assertEqual(warnings, [])
 
 
 if __name__ == '__main__':

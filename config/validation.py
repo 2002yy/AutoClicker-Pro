@@ -300,6 +300,18 @@ def validate_macro_action(action: Dict[str, Any]) -> Tuple[bool, str]:
         if not is_valid:
             return False, error_msg
 
+    # 可选窗口锚定字段：要么全缺省，要么 title + 双偏移齐全且类型正确
+    anchor_title = action.get('anchor_title')
+    rel_x = action.get('win_rel_x')
+    rel_y = action.get('win_rel_y')
+    has_anchor = any(v is not None for v in (anchor_title, rel_x, rel_y))
+    if has_anchor:
+        if not isinstance(anchor_title, str) or not anchor_title.strip():
+            return False, "窗口锚定缺少有效标题 (anchor_title)"
+        for field_name, value in (('win_rel_x', rel_x), ('win_rel_y', rel_y)):
+            if not isinstance(value, int) or isinstance(value, bool):
+                return False, f"窗口相对坐标 {field_name} 必须是整数"
+
     # 验证时间戳（可选）
     if 'timestamp' in action:
         is_valid, error_msg = validate_number(
