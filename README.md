@@ -29,15 +29,20 @@ Do not use it to violate software terms of service, bypass anti-cheat systems, a
 > ⚠️ 以下为**已实现**功能；"规划中"为尚未实现、此前文档曾误述为已实现的部分。
 
 - 🖱️ **鼠标连点** — 支持左键/右键/中键，固定坐标，按配置间隔自动点击（**已实现**）
-- 🔴 **宏录制（鼠标 + 键盘）** — 录制鼠标点击与键盘按键序列并以毫秒精度回放，支持指定次数/时长停止（**已实现**；录制时落在本程序窗口内的点击自动忽略）
-- ⌨️ **键盘连点 / 录制** — 录制过程中捕获键盘按键，回放时按"轻点"语义自动按下并释放（**已实现**）
+- 🔴 **宏录制（鼠标 + 键盘）** — 录制鼠标点击与键盘按键序列，回放按录制时的真实节奏执行（时间戳原速回放），支持指定次数重复（**已实现**；录制时落在本程序窗口内的点击自动忽略）
+- ⌨️ **键盘连点 / 录制** — 录制键盘按键并在回放时自动按下释放（**已实现**）
+- ⌨️ **组合键与拖拽宏** — Ctrl+C / Shift+单击 等修饰键组合录为单条动作并整体还原；按下-移动-释放的拖拽序列按原样回放（**已实现**）
 - 🔐 **加密存储** — 宏文件采用本地 Fernet 对称加密（**已实现**；密钥存于用户目录 `~/.autoclicker_pro/`，属**本地混淆级**保护，并非对抗同机攻击者的机密保护）
 - ⚙️ **灵活配置** — 毫秒级间隔、按住时长、重复次数/间隔设置（**已实现**）
 - 🔧 **全局快捷键** — F8 启停连点、F10 开始录制、F11 停止录制、ESC 一键全停，窗口失焦时同样生效（**已实现**）
+- ✏️ **宏编辑** — 对已录制的动作可删除选中 / 上移 / 下移 / 一键清空，无需为单个误触重录整条序列（**已实现**）
+- ⌨️ **快捷键自定义** — 四个全局快捷键均可在界面修改（支持 ctrl+shift+x 组合），自动持久化并在下次启动生效（**已实现**）
 - 🎨 **Win11 风格界面** — 基于 ttk 的自定义浅色主题：Segoe UI 字体、蓝(#0067C0)强调色主按钮、扁平卡片与细边框（**已实现**）
 - 🚀 **便携运行** — 单文件 EXE，无需安装 Python（**已实现**）
 
-> 说明：上述功能均已实现并通过单元测试（当前共 64 项）。加密存储为本地混淆级保护，详见「合法使用与免责声明」。
+> 说明：功能均已由单元测试覆盖（含 GUI 冒烟测试），测试数以 CI 实时结果为准。加密存储为本地混淆级保护，详见「合法使用与免责声明」。
+>
+> 回放时序说明：录制产生的序列按各动作的原始时间戳回放（真实节奏）；无时间戳数据的旧文件退回固定"点击间隔"均速回放。
 
 ---
 
@@ -65,7 +70,7 @@ python pack.py
 
 ## 快捷键
 
-以下均为**全局快捷键**，程序窗口在后台时同样生效。
+以下为**默认**全局快捷键，均可在界面"全局快捷键"区自定义（自动持久化），窗口在后台时同样生效。
 
 | 快捷键 | 功能 |
 |--------|------|
@@ -77,17 +82,17 @@ python pack.py
 > 说明：全局快捷键依赖系统级键盘钩子。若在受限环境（远程桌面、部分安全软件拦截、无输入权限）下注册失败，
 > 程序会在状态栏提示并自动降级为"仅界面按钮 + 窗口内 ESC"，主功能不受影响。
 >
-> 录制期间，落在本程序窗口内的点击会被自动忽略，因此点击"停止录制"按钮本身不会被录进宏里。同时会捕获键盘按键（F8/F10/F11/ESC 等控制键除外），回放时一并执行。
+> 录制期间，落在本程序窗口内的点击会被自动忽略，因此点击"停止录制"按钮本身不会被录进宏里。键盘按键会被一并捕获（F8/F10/F11/ESC 等控制键除外）：普通键录为轻点，Ctrl/Shift/Alt+按键 录为组合键、回放整体还原；修饰键与鼠标点击的组合（如 Shift+单击）同样支持。
 
 ---
 ## Engineering Highlights
 
 - Layered structure: config / core / ui / utils
-- Macro recording and playback with millisecond precision
+- Macro recording and playback with original-timestamp timing (chord & drag aware)
 - Fernet encrypted macro storage
 - PyInstaller single-file EXE packaging
-- GitHub Actions build workflow
-- 64 unit tests
+- GitHub Actions build workflow with GUI smoke tests
+- Unit tests (count tracked by CI)
 
 
 ## 项目结构
@@ -168,9 +173,10 @@ MIT License — 详见 [LICENSE](LICENSE)
 
 ## Roadmap
 
-- [ ] Macro editing UI
-- [ ] Scheduled auto-click tasks
+- [x] Macro editing UI
+- [x] Hotkey customization
+- [ ] Coordinate adaptation (window-relative recording/playback)
 - [ ] Multi-profile macro management
-- [ ] Hotkey customization
+- [ ] Scheduled auto-click tasks
 - [ ] Internationalization (i18n)
 

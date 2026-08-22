@@ -3,8 +3,30 @@
 提供输入数据验证功能
 """
 
-from typing import Tuple, Dict, Any, Optional
+from typing import Tuple, Dict, Any, Optional, List
 from .constants import VALIDATION_RULES, ERROR_VALIDATION_FAILED
+
+# 修饰键前缀（pynput 键名：ctrl / ctrl_l / ctrl_r / alt / alt_gr / shift_l / cmd ...）
+MODIFIER_PREFIXES = ('ctrl', 'alt', 'shift', 'cmd')
+
+
+def is_modifier_name(name: Any) -> bool:
+    """判断规范键名是否为修饰键（供录制器与校验共用）"""
+    if not isinstance(name, str) or not name:
+        return False
+    return name in MODIFIER_PREFIXES or name.startswith(
+        tuple(prefix + '_' for prefix in MODIFIER_PREFIXES)
+    )
+
+
+def validate_modifier_list(modifiers: Any) -> Tuple[bool, str]:
+    """校验修饰键列表：非空、元素均为合法修饰键名"""
+    if not isinstance(modifiers, (list, tuple)) or len(modifiers) == 0:
+        return False, "组合键缺少修饰键列表 (modifiers)"
+    for mod in modifiers:
+        if not is_modifier_name(mod):
+            return False, f"非法的修饰键名：{mod}"
+    return True, ""
 
 
 class ValidationError(Exception):
@@ -203,9 +225,11 @@ def validate_macro_action(action: Dict[str, Any]) -> Tuple[bool, str]:
     """
     验证宏动作数据
 
-    支持两种动作：
-    - 鼠标动作（kind 缺省或为 'mouse'）：需 x/y/button/action_type
-    - 键盘动作（kind='key'）：需 key（规范键名）/action_type，x/y 不使用
+    支持三种动作：
+    - 鼠标动作（kind 缺省或为 'mouse'）：需 x/y/button/action_type；
+      可选 modifiers（组合键点击，如 Shift+单击）
+    - 键盘单键（kind='key'）：需 key（规范键名）/action_type，x/y 不使用
+    - 键盘组合键（kind='chord'）：需 key + 非空合法的 modifiers 列表
 
     Args:
         action: 宏动作字典
@@ -218,7 +242,22 @@ def validate_macro_action(action: Dict[str, Any]) -> Tuple[bool, str]:
 
     kind = action.get('kind', 'mouse')
 
-    # 键盘动作：只需 action_type + key（x/y/button 不使用）
+    # 键盘组合键：action_type + key + modifiers
+    if kind == 'chord':
+        is_valid, error_msg = validate_string(
+            action.get('action_type', ''), "动作类型",
+            required=True, allowed_values=['press']
+        )
+        if not is_valid:
+            return False, error_msg
+        if not action.get('key'):
+            return False, "键盘组合键缺少触发键 (key)"
+        is_valid, error_msg = validate_modifier_list(action.get('modifiers'))
+        if not is_valid:
+            return False, error_msg
+        return True, ""
+
+    # 键盘单键：只需 action_type + key（x/y/button 不使用）
     if kind == 'key':
         is_valid, error_msg = validate_string(
             action.get('action_type', ''), "动作类型",
@@ -254,6 +293,12 @@ def validate_macro_action(action: Dict[str, Any]) -> Tuple[bool, str]:
     )
     if not is_valid:
         return False, error_msg
+
+    # 可选修饰键（组合键点击）
+    if action.get('modifiers'):
+        is_valid, error_msg = validate_modifier_list(action['modifiers'])
+        if not is_valid:
+            return False, error_msg
 
     # 验证时间戳（可选）
     if 'timestamp' in action:

@@ -1,30 +1,33 @@
 """
 宏数据模型模块
-定义点击动作的数据结构。
+定义动作的数据结构。
+
+动作分三类：
+- kind='mouse'  鼠标事件：x/y/button/action_type；可选 modifiers（组合键点击，
+  如 Shift+单击——修饰键记录在按下侧与释放侧各一份，回放负责对称按下/释放）；
+- kind='key'    单键轻点：key 为规范键名（如 'a'、'enter'）；
+- kind='chord'  键盘组合键：modifiers 为按住顺序的修饰键名列表，
+  key 为触发键（如 Ctrl+C -> modifiers=['ctrl_l'], key='c'），回放为整体轻点。
 
 说明：早期版本这里还有 MacroRecorder / MacroPlayer / MacroStorage 三个类，
-但录制、回放、存盘能力已全部由 core.engine.ClickerEngine 实现，
-那三个类没有任何调用方，属于死代码，已于 v2.0.1 移除。
+其能力已全部由 core.engine.ClickerEngine 实现，已于 v2.0.1 移除。
 """
 
-from typing import Dict, Optional
-from dataclasses import dataclass, asdict
+from dataclasses import dataclass, field, asdict
+from typing import Dict, List, Optional
 
 
 @dataclass
 class ClickAction:
-    """表示一个动作（鼠标点击或键盘按键）
-
-    kind='mouse' 时 button 取 'left'/'right'/'middle'/'x1'/'x2'，x/y 为目标坐标；
-    kind='key'   时 key 取规范键名（如 'a'、'enter'、'ctrl_l'），x/y 不使用（置 0）。
-    """
+    """表示一个动作（鼠标事件 / 键盘按键 / 键盘组合键）"""
     x: int
     y: int
-    button: str  # 鼠标：'left'/'right'/'middle'/'x1'/'x2'；键盘：留空
-    action_type: str  # 'press' 或 'release'
+    button: str  # 鼠标：'left'/'right'/'middle'/'x1'/'x2'；键盘类留空
+    action_type: str  # 'press' 或 'release'（chord 固定为 'press'）
     timestamp: float  # 相对于序列开始的时间戳（秒）
-    kind: str = 'mouse'          # 'mouse' | 'key'
-    key: Optional[str] = None    # 键盘动作的规范键名（kind='key' 时有效）
+    kind: str = 'mouse'           # 'mouse' | 'key' | 'chord'
+    key: Optional[str] = None     # key/chord 的触发键规范键名
+    modifiers: List[str] = field(default_factory=list)  # 组合键修饰键（按下顺序）
 
     def to_dict(self) -> Dict:
         """转换为字典"""
@@ -32,7 +35,8 @@ class ClickAction:
 
     @classmethod
     def from_dict(cls, data: Dict) -> 'ClickAction':
-        """从字典创建实例（兼容旧版无 kind/key 字段的数据）"""
+        """从字典创建实例（兼容旧版无 kind/key/modifiers 字段的数据）"""
+        raw_mods = data.get('modifiers') or []
         return cls(
             x=data.get('x', 0),
             y=data.get('y', 0),
@@ -41,4 +45,5 @@ class ClickAction:
             timestamp=data.get('timestamp', 0.0),
             kind=data.get('kind', 'mouse'),
             key=data.get('key'),
+            modifiers=list(raw_mods),
         )

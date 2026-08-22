@@ -106,13 +106,21 @@ class HotkeyManager:
                 cb for hotkey, cb in self._hotkeys.items()
                 if frozenset(hotkey.split('+')) == current_keys
             ]
-        
+
         for callback in matched:
-            try:
-                # 在新线程中执行回调，避免阻塞监听
-                threading.Thread(target=callback, daemon=True).start()
-            except Exception as e:
-                print(f"执行快捷键回调失败：{e}")
+            # 在新线程中执行回调，避免阻塞监听；
+            # 异常在子线程内捕获，避免默认 excepthook 把 traceback 刷进 stderr
+            threading.Thread(
+                target=self._safe_invoke, args=(callback,), daemon=True
+            ).start()
+
+    @staticmethod
+    def _safe_invoke(callback: Callable):
+        """执行单个快捷键回调并吞掉异常（容错优先，单次失败不影响监听）"""
+        try:
+            callback()
+        except Exception as e:
+            print(f"执行快捷键回调失败：{e}")
     
     def is_running(self) -> bool:
         """检查是否正在运行"""

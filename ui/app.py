@@ -4,6 +4,7 @@
 """
 
 import queue
+import gc
 import tkinter as tk
 from tkinter import ttk, messagebox, filedialog
 from typing import Callable, Optional, Tuple
@@ -16,15 +17,33 @@ from config.constants import (
     PADDING_STANDARD, PADDING_LARGE, PADDING_SMALL,
     STATUS_READY,
     HOTKEY_START_STOP, HOTKEY_START_RECORDING,
-    HOTKEY_STOP_RECORDING, HOTKEY_CANCEL, HOTKEY_HINT
+    HOTKEY_STOP_RECORDING, HOTKEY_CANCEL,
 )
-from core.engine import ClickerEngine
+from config.settings_store import load_settings, save_settings
+from core.engine import ClickerEngine, EngineEvent
 from ui.components import SettingsPanel, ActionList, ControlButtons, StatusBar
+from ui.components.hotkey_settings import HotkeySettings, HOTKEY_FIELDS
 from ui.theme import apply_win11_theme
 from utils.hotkey_manager import HotkeyManager
 
 # UI 事件队列轮询间隔（毫秒）
 _UI_POLL_INTERVAL_MS = 50
+
+# 各动作的默认全局快捷键（可被 settings.json 覆盖）
+DEFAULT_HOTKEYS = {
+    'toggle': HOTKEY_START_STOP,
+    'start_recording': HOTKEY_START_RECORDING,
+    'stop_recording': HOTKEY_STOP_RECORDING,
+    'panic': HOTKEY_CANCEL,
+}
+
+
+def _display_key(key: str) -> str:
+    """键名转展示文本（'f8'->'F8'，单字符大写，其余首字母大写）"""
+    key = key.strip().lower()
+    if len(key) == 1:
+        return key.upper()
+    return key.upper() if key.upper() in ("ESC",) else key.capitalize()
 
 
 class AutoClickerApp:
@@ -40,6 +59,10 @@ class AutoClickerApp:
         
         # 本窗口在屏幕上的矩形（含边框/标题栏），供录制过滤使用
         self._window_bounds: Tuple[int, int, int, int] = (0, 0, 0, 0)
+
+        # 挂起的 root.after 定时器 ID：关闭时统一取消，
+        # 避免销毁后回调触发 Tcl "invalid command name" 后台错误
+        self._pending_afters: set = set()
         
         # 窗口配置
         self._configure_window()
@@ -48,14 +71,24 @@ class AutoClickerApp:
         self.engine = ClickerEngine()
         self.engine.set_callbacks(
             on_status_change=self._on_engine_status_change,
-            on_recording_update=self._on_engine_recording_update
+            on_recording_update=self._on_engine_recording_update,
+            on_engine_event=self._on_engine_event
         )
         # 录制时忽略落在本窗口内的点击（如点"停止录制"按钮）
         self.engine.ignore_click_predicate = self._is_point_in_own_window
-        
+
         # 当前动作序列
         self._current_actions: list = []
-        
+
+        # 生效中的全局快捷键（settings.json 覆盖默认值）
+        self.hotkeys: dict = dict(DEFAULT_HOTKEYS)
+        saved = load_settings().get('hotkeys')
+        if isinstance(saved, dict):
+            for action in DEFAULT_HOTKEYS:
+                value = saved.get(action)
+                if isinstance(value, str) and value.strip():
+                    self.hotkeys[action] = value.strip().lower()
+
         # 创建界面
         self._create_ui()
         
@@ -66,8 +99,21 @@ class AutoClickerApp:
         
         # 跟踪窗口位置变化 + 启动 UI 队列轮询
         self.root.bind('<Configure>', self._on_window_configure)
-        self.root.after(120, self._refresh_window_bounds)
-        self.root.after(_UI_POLL_INTERVAL_MS, self._drain_ui_queue)
+        self._schedule_after(120, self._refresh_window_bounds)
+        self._schedule_after(_UI_POLL_INTERVAL_MS, self._drain_ui_queue)
+
+    def _schedule_after(self, ms: int, func: Callable[[], None]):
+        """root.after 的受管版本：登记定时器 ID 供 on_close 统一取消；
+        触发后自动从集合移除，避免集合随运行时间无限增长"""
+        def _wrapped():
+            self._pending_afters.discard(after_id)
+            func()
+
+        try:
+            after_id = self.root.after(ms, _wrapped)
+            self._pending_afters.add(after_id)
+        except tk.TclError:
+            pass  # 窗口已销毁时静默放弃
     
     def _configure_window(self):
         """配置窗口属性"""
@@ -83,37 +129,58 @@ class AutoClickerApp:
         # 主框架
         main_frame = ttk.Frame(self.root, padding=PADDING_STANDARD)
         main_frame.grid(row=0, column=0, sticky="nsew")
-        
+
         # 配置网格权重（动作列表所在行才是可伸缩的主体区域）
         self.root.columnconfigure(0, weight=1)
         self.root.rowconfigure(0, weight=1)
         main_frame.columnconfigure(0, weight=1)
-        main_frame.rowconfigure(4, weight=1)
-        
+        main_frame.rowconfigure(5, weight=1)
+
         # 标题 + 快捷键提示
         self._create_title(main_frame)
-        
+
         # 设置面板
         self.settings_panel = SettingsPanel(main_frame)
         self.settings_panel.grid(row=2, column=0, sticky="ew", pady=(0, PADDING_STANDARD))
-        
+
         # 控制按钮
         self.control_buttons = ControlButtons(main_frame)
         self.control_buttons.grid(row=3, column=0, sticky="ew", pady=(0, PADDING_STANDARD))
-        
+
         # 设置按钮回调
         self.control_buttons.set_record_callback(self._on_record_click)
         self.control_buttons.set_click_callback(self._on_click_click)
         self.control_buttons.set_save_callback(self._on_save_click)
         self.control_buttons.set_load_callback(self._on_load_click)
-        
+
+        # 全局快捷键自定义区
+        self.hotkey_settings = HotkeySettings(main_frame,
+                                              on_apply=self._apply_hotkeys)
+        self.hotkey_settings.set_values(self.hotkeys)
+        self.hotkey_settings.grid(row=4, column=0, sticky="ew",
+                                  pady=(0, PADDING_STANDARD))
+
         # 动作列表（占据剩余空间）
         self.action_list = ActionList(main_frame)
-        self.action_list.grid(row=4, column=0, sticky="nsew", pady=(0, PADDING_STANDARD))
-        
+        self.action_list.grid(row=5, column=0, sticky="nsew", pady=(0, PADDING_STANDARD))
+        self.action_list.set_edit_callbacks(
+            on_delete=self._on_delete_action,
+            on_move_up=lambda: self._on_move_action(-1),
+            on_move_down=lambda: self._on_move_action(1),
+            on_clear=self._on_clear_actions,
+        )
+        self.action_list.on_selection_change = self._on_list_selection_change
+
         # 状态栏
         self.status_bar = StatusBar(main_frame)
-        self.status_bar.grid(row=5, column=0, sticky="ew")
+        self.status_bar.grid(row=6, column=0, sticky="ew")
+
+    def _hotkey_hint_text(self) -> str:
+        """根据当前生效的快捷键动态生成提示文案"""
+        labels = dict(HOTKEY_FIELDS)
+        parts = [f"{_display_key(self.hotkeys[action])} {labels[action]}"
+                 for action, _ in HOTKEY_FIELDS]
+        return " | ".join(parts)
     
     def _create_title(self, parent):
         """创建标题与快捷键提示"""
@@ -127,7 +194,7 @@ class AutoClickerApp:
         
         self.hotkey_hint_label = ttk.Label(
             parent,
-            text=HOTKEY_HINT,
+            text=self._hotkey_hint_text(),
             font=(FONT_FAMILY, FONT_SIZE_SMALL),
             foreground=COLOR_DISABLED
         )
@@ -140,13 +207,13 @@ class AutoClickerApp:
         self.root.bind('<Escape>', lambda e: self._panic_stop())
     
     def _setup_global_hotkeys(self):
-        """注册全局快捷键（窗口失焦时同样生效）"""
+        """按当前生效的快捷键映射注册全局热键（窗口失焦时同样生效）"""
         manager = HotkeyManager()
-        manager.register_hotkey(HOTKEY_START_STOP, self._hk_toggle_clicking)
-        manager.register_hotkey(HOTKEY_START_RECORDING, self._hk_start_recording)
-        manager.register_hotkey(HOTKEY_STOP_RECORDING, self._hk_stop_recording)
-        manager.register_hotkey(HOTKEY_CANCEL, self._hk_panic_stop)
-        
+        manager.register_hotkey(self.hotkeys['toggle'], self._hk_toggle_clicking)
+        manager.register_hotkey(self.hotkeys['start_recording'], self._hk_start_recording)
+        manager.register_hotkey(self.hotkeys['stop_recording'], self._hk_stop_recording)
+        manager.register_hotkey(self.hotkeys['panic'], self._hk_panic_stop)
+
         try:
             manager.start()
             self.hotkey_manager = manager
@@ -155,6 +222,37 @@ class AutoClickerApp:
             # 此时降级为仅窗口内快捷键可用，不影响主功能。
             self.hotkey_manager = None
             self.status_bar.set_status(f"全局快捷键不可用（{e}），请使用界面按钮")
+
+        # 录制时跳过这些控制键（含用户自定义后的键名）
+        self.engine.set_skip_key_names(
+            list(self.hotkeys.values()) + [HOTKEY_CANCEL]
+        )
+
+    def _apply_hotkeys(self, values: dict):
+        """应用自定义快捷键：校验 -> 重建监听 -> 更新引擎跳过集与提示 -> 持久化"""
+        ok, error_msg = self.hotkey_settings.validate()
+        if not ok:
+            self.hotkey_settings.show_error(error_msg)
+            return
+        self.hotkey_settings.clear_error()
+
+        # 停旧监听、按新映射整体重建，避免部分注册的中间状态
+        if self.hotkey_manager is not None:
+            try:
+                self.hotkey_manager.stop()
+            except Exception:
+                pass
+            self.hotkey_manager = None
+
+        self.hotkeys = {action: values[action] for action, _ in HOTKEY_FIELDS}
+        self._setup_global_hotkeys()
+
+        # 提示文案随实际按键更新；持久化失败不影响本次会话
+        self.hotkey_hint_label.config(text=self._hotkey_hint_text())
+        if save_settings({'hotkeys': self.hotkeys}):
+            self.status_bar.set_success("快捷键已更新并保存")
+        else:
+            self.status_bar.set_success("快捷键已更新（写入设置文件失败，重启后失效）")
     
     # 以下 _hk_* 回调在 pynput 监听线程中被调用，必须转投主线程
     def _hk_toggle_clicking(self):
@@ -193,7 +291,7 @@ class AutoClickerApp:
         if not self._closing:
             self._ui_queue.put(func)
     
-    def _drain_ui_queue(self):
+    def _drain_ui_queue(self, *_args):
         """在主线程中消费 UI 任务队列"""
         while True:
             try:
@@ -204,9 +302,9 @@ class AutoClickerApp:
                 func()
             except Exception as e:
                 print(f"UI 任务执行失败：{e}")
-        
+
         if not self._closing:
-            self.root.after(_UI_POLL_INTERVAL_MS, self._drain_ui_queue)
+            self._schedule_after(_UI_POLL_INTERVAL_MS, self._drain_ui_queue)
     
     # ==================== 窗口位置追踪 ====================
     
@@ -333,30 +431,84 @@ class AutoClickerApp:
             repeat_count=values.get('repeat_count'),
             repeat_interval=values.get('repeat_interval')
         )
+
+    # ==================== 序列编辑 ====================
+
+    def _refresh_actions_ui(self, select: Optional[int] = None):
+        """从引擎读取序列并刷新列表与按钮状态（编辑操作后调用）"""
+        actions = self.engine.get_sequence()
+        self._update_actions_list_ui(actions)
+        if select is not None and 0 <= select < len(actions):
+            self.action_list.select_index(select)
+
+    def _on_delete_action(self):
+        """删除当前选中的动作，选中项保持在原位置附近"""
+        index = self.action_list.get_selected_index()
+        if index is None or not self.engine.remove_action(index):
+            return
+        remaining = len(self.engine.get_sequence())
+        self._refresh_actions_ui(select=min(index, remaining - 1))
+
+    def _on_move_action(self, delta: int):
+        """把选中的动作上移(-1)/下移(+1)，保持其选中状态"""
+        index = self.action_list.get_selected_index()
+        if index is None:
+            return
+        target = index + delta
+        if not self.engine.move_action(index, target):
+            return
+        self._refresh_actions_ui(select=target)
+
+    def _on_clear_actions(self):
+        """清空动作序列；clear_sequence 经录制回调通道自动刷新 UI"""
+        self.engine.clear_sequence()
+
+    def _on_list_selection_change(self, index: int):
+        """选中项变化 -> 上移/下移按钮随边界启停"""
+        total = len(self.engine.get_sequence())
+        self.action_list.move_up_button.config(
+            state=tk.NORMAL if index > 0 else tk.DISABLED)
+        self.action_list.move_down_button.config(
+            state=tk.NORMAL if 0 <= index < total - 1 else tk.DISABLED)
     
     # ==================== 引擎回调 ====================
-    
+
+    def _on_engine_event(self, event: EngineEvent):
+        """引擎结构化状态事件（在工作线程中调用）"""
+        self._dispatch_to_ui(lambda: self._apply_engine_event(event))
+
+    def _apply_engine_event(self, event: EngineEvent):
+        """按事件更新 UI 状态机（在主线程中执行，不做字符串解析）"""
+        handlers = {
+            EngineEvent.RECORDING_STARTED: (
+                self.status_bar.set_recording,
+                lambda: self.control_buttons.update_recording_state(True),
+            ),
+            EngineEvent.RECORDING_STOPPED: (
+                self.status_bar.set_recording_stopped,
+                lambda: self.control_buttons.update_recording_state(False),
+            ),
+            EngineEvent.CLICKING_STARTED: (
+                self.status_bar.set_clicking,
+                lambda: self.control_buttons.update_clicking_state(True),
+            ),
+            EngineEvent.CLICKING_STOPPED: (
+                self.status_bar.set_stopped,
+                lambda: self.control_buttons.update_clicking_state(False),
+            ),
+        }
+        handler = handlers.get(event)
+        if handler:
+            handler[0]()
+            handler[1]()
+
     def _on_engine_status_change(self, status: str):
-        """引擎状态变化回调（在工作线程中调用）"""
-        # 通过队列转投主线程，避免跨线程直接操作 Tk
+        """引擎状态文案回调（在工作线程中调用），仅用于未归类文案的兜底展示"""
         self._dispatch_to_ui(lambda: self._update_status_ui(status))
-    
+
     def _update_status_ui(self, status: str):
-        """更新状态 UI（在主线程中执行）"""
-        if "正在录制" in status:
-            self.status_bar.set_recording()
-            self.control_buttons.update_recording_state(True)
-        elif "录制已停止" in status:
-            self.status_bar.set_recording_stopped()
-            self.control_buttons.update_recording_state(False)
-        elif "正在点击" in status:
-            self.status_bar.set_clicking()
-            self.control_buttons.update_clicking_state(True)
-        elif "已停止" in status:
-            self.status_bar.set_stopped()
-            self.control_buttons.update_clicking_state(False)
-        else:
-            self.status_bar.set_status(status)
+        """兜底状态展示（在主线程中执行）；按钮状态由 _apply_engine_event 驱动"""
+        self.status_bar.set_status(status)
     
     def _on_engine_recording_update(self, actions: list):
         """引擎录制更新回调（在工作线程中调用）"""
@@ -367,24 +519,37 @@ class AutoClickerApp:
         """更新动作列表 UI（在主线程中执行）"""
         self._current_actions = actions
         self.action_list.update_actions([action.to_dict() for action in actions])
-        
-        # 如果有动作，启用点击和保存按钮
+
+        # 有动作时启用点击/保存/编辑；无动作全部禁用
         has_actions = len(actions) > 0
         self.control_buttons.enable_click_button(has_actions)
         self.control_buttons.enable_save_button(has_actions)
+        self.action_list.enable_edit_buttons(has_actions)
     
     def on_close(self):
         """窗口关闭事件"""
         self._closing = True
-        
+
+        # 取消所有挂起的定时器，防止销毁后触发 Tcl 后台错误
+        for after_id in list(self._pending_afters):
+            try:
+                self.root.after_cancel(after_id)
+            except tk.TclError:
+                pass
+        self._pending_afters.clear()
+
         if self.hotkey_manager is not None:
             try:
                 self.hotkey_manager.stop()
             except Exception:
                 pass
             self.hotkey_manager = None
-        
+
         self.engine.cleanup()
+
+        # 在 Tcl 环境仍存活时主动回收 Tk 变量包装对象（StringVar 等）：
+        # 若留到解释器退出阶段，跨线程清理会触发 Tcl_AsyncDelete 硬崩溃
+        gc.collect()
         self.root.destroy()
 
 

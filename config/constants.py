@@ -5,7 +5,7 @@
 
 # ==================== 应用程序基础配置 ====================
 APP_NAME = "自动点击器 Pro"
-APP_VERSION = "2.0.0"
+APP_VERSION = "2.1.0"
 APP_WIDTH = 450
 APP_HEIGHT = 650
 APP_MIN_WIDTH = 400

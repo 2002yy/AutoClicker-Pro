@@ -280,5 +280,274 @@ class TestClickerEngineKeyboardPlayback(unittest.TestCase):
         self.assertIn('a', self._released_chars())      # 到点释放
 
 
+class TestChordRecording(unittest.TestCase):
+    """组合键录制：修饰键挂起，触发键到达时录为单条 chord"""
+
+    def setUp(self):
+        self.engine = _fresh_engine(MagicMock(), MagicMock())
+        self.engine.is_recording = True
+        self.engine.recording_start_time = time.time()
+        self.engine.click_sequence = []
+
+    def _press(self, key):
+        self.engine._on_key_press(key)
+
+    def _release(self, key):
+        self.engine._on_key_release(key)
+
+    def test_ctrl_c_records_single_chord(self):
+        from pynput import keyboard
+        self._press(keyboard.Key.ctrl_l)
+        self.assertEqual(len(self.engine.click_sequence), 0)  # 挂起中不录
+        self._press(keyboard.KeyCode(char='c'))
+        self.assertEqual(len(self.engine.click_sequence), 1)
+        action = self.engine.click_sequence[0]
+        self.assertEqual(action.kind, 'chord')
+        self.assertEqual(action.key, 'c')
+        self.assertEqual(action.modifiers, ['ctrl_l'])
+
+    def test_consumed_modifier_release_emits_nothing(self):
+        from pynput import keyboard
+        self._press(keyboard.Key.ctrl_l)
+        self._press(keyboard.KeyCode(char='c'))
+        self._release(keyboard.Key.ctrl_l)
+        self.assertEqual(len(self.engine.click_sequence), 1)
+
+    def test_lone_modifier_tap_recorded_on_release(self):
+        from pynput import keyboard
+        # 注：pynput 中 Key.shift_l 的规范名就是 'shift'（左右 Shift 共享）
+        self._press(keyboard.Key.shift)
+        self.assertEqual(len(self.engine.click_sequence), 0)  # 挂起中
+        self._release(keyboard.Key.shift)
+        self.assertEqual(len(self.engine.click_sequence), 1)
+        action = self.engine.click_sequence[0]
+        self.assertEqual(action.kind, 'key')
+        self.assertEqual(action.key, 'shift')
+
+    def test_modifier_plus_mouse_click(self):
+        from pynput import keyboard, mouse
+        self._press(keyboard.Key.ctrl_l)
+        self.engine._on_mouse_click(100, 200, mouse.Button.left, True)
+        self.engine._on_mouse_click(100, 200, mouse.Button.left, False)
+        press_action, release_action = self.engine.click_sequence[:2]
+        self.assertEqual(press_action.modifiers, ['ctrl_l'])
+        self.assertEqual(release_action.modifiers, ['ctrl_l'])
+        # ctrl 物理释放后已被消费，不再补录
+        self._release(keyboard.Key.ctrl_l)
+        self.assertEqual(len(self.engine.click_sequence), 2)
+
+    def test_stop_discards_pending_modifiers(self):
+        from pynput import keyboard
+        self._press(keyboard.Key.alt_l)
+        self.engine.stop_recording()
+        self.assertFalse(self.engine.is_recording)
+        self.assertEqual(len(self.engine.click_sequence), 0)
+
+
+class _FakeMouseController:
+    """记录操作序列的假鼠标控制器（用于验证拖拽的移动-按下-移动-释放顺序）"""
+
+    def __init__(self):
+        self.ops = []
+        self._position = None
+
+    @property
+    def position(self):
+        return self._position
+
+    @position.setter
+    def position(self, value):
+        self.ops.append(('move', value))
+        self._position = value
+
+    def press(self, button):
+        self.ops.append(('press',))
+
+    def release(self, button):
+        self.ops.append(('release',))
+
+
+class TestDragPairing(unittest.TestCase):
+    """拖拽修复：配对的 press 不注入 hold_duration 自动释放"""
+
+    def setUp(self):
+        self.fake_mouse = _FakeMouseController()
+        self.engine = _fresh_engine(self.fake_mouse, MagicMock())
+        self.engine.click_sequence = [
+            ClickAction(10, 20, 'left', 'press', 0.0),
+            ClickAction(30, 40, 'left', 'release', 0.15),
+        ]
+
+    def test_drag_survives_large_hold_duration(self):
+        # 旧实现在此配置下会把拖拽拆成"原地按下-等5秒-原地释放"
+        self.engine.update_config(hold_duration=5000, interval_ms=0,
+                                  repeat_count=1)
+        started = time.time()
+        self.assertTrue(self.engine.start_clicking())
+        deadline = started + 3.0
+        while self.engine.is_running and time.time() < deadline:
+            time.sleep(0.02)
+        self.assertFalse(self.engine.is_running)
+
+        # 完成耗时应远小于 hold_duration（时间轴上 0.15s 处释放）
+        self.assertLess(time.time() - started, 2.0)
+
+        # 操作序列必须是：移动A -> 按下 -> 移动B -> 释放（真实拖拽语义）
+        self.assertEqual(
+            self.fake_mouse.ops,
+            [('move', (10, 20)), ('press',), ('move', (30, 40)), ('release',)]
+        )
+
+    def test_unpaired_press_still_taps_with_hold(self):
+        # 孤立 press（无对应 release）保持轻点 + hold_duration 语义
+        self.fake_mouse.ops = []
+        self.engine.click_sequence = [ClickAction(1, 2, 'left', 'press', 0.0)]
+        self.engine.update_config(hold_duration=200, interval_ms=0,
+                                  repeat_count=1)
+        self.assertTrue(self.engine.start_clicking())
+        time.sleep(0.05)
+        self.assertIn(('press',), self.fake_mouse.ops)
+        self.assertNotIn(('release',), self.fake_mouse.ops)  # 按住中
+        time.sleep(0.35)
+        self.assertIn(('release',), self.fake_mouse.ops)     # 到点轻点完成
+
+
+class TestChordPlayback(unittest.TestCase):
+    """组合键回放：按住修饰键 -> 轻点触发键 -> 逆序释放修饰键"""
+
+    def setUp(self):
+        self.kb_mock = MagicMock()
+        self.engine = _fresh_engine(MagicMock(), self.kb_mock)
+        self.engine.click_sequence = [
+            ClickAction(0, 0, '', 'press', 0.0, kind='chord',
+                        key='c', modifiers=['ctrl_l']),
+        ]
+
+    def test_chord_press_order(self):
+        from pynput import keyboard
+        self.engine.update_config(hold_duration=0, interval_ms=0,
+                                  repeat_count=1)
+        self.assertTrue(self.engine.start_clicking())
+        time.sleep(0.3)
+        self.assertFalse(self.engine.is_running)
+
+        pressed_names = []
+        for call in self.kb_mock.press.call_args_list:
+            k = call.args[0]
+            pressed_names.append(getattr(k, 'name', None) or getattr(k, 'char'))
+        released_names = []
+        for call in self.kb_mock.release.call_args_list:
+            k = call.args[0]
+            released_names.append(getattr(k, 'name', None) or getattr(k, 'char'))
+
+        self.assertEqual(pressed_names, ['ctrl_l', 'c'])
+        # 触发键先于修饰键释放（逆序）
+        self.assertEqual(released_names, ['c', 'ctrl_l'])
+
+
+class _FakeKeyboardController:
+    """记录按键时刻的假键盘控制器（用于验证时间戳时序）"""
+
+    def __init__(self):
+        self.press_times = []
+
+    def press(self, key):
+        self.press_times.append(time.perf_counter())
+
+    def release(self, key):
+        pass
+
+
+class TestTimestampPacing(unittest.TestCase):
+    """回放时序：有非零时间戳按原速；全零退回固定间隔"""
+
+    def setUp(self):
+        self.fake_kb = _FakeKeyboardController()
+        self.engine = _fresh_engine(MagicMock(), self.fake_kb)
+        self.engine.update_config(interval_ms=1000, repeat_count=1)
+
+    def _run_and_collect_gaps(self):
+        self.assertTrue(self.engine.start_clicking())
+        deadline = time.perf_counter() + 5.0
+        while self.engine.is_running and time.perf_counter() < deadline:
+            time.sleep(0.01)
+        times = self.fake_kb.press_times
+        return [times[i + 1] - times[i] for i in range(len(times) - 1)]
+
+    def test_recorded_timestamps_replayed_at_original_speed(self):
+        self.engine.click_sequence = [
+            ClickAction(0, 0, '', 'press', 0.0, kind='key', key='a'),
+            ClickAction(0, 0, '', 'press', 0.3, kind='key', key='b'),
+        ]
+        gaps = self._run_and_collect_gaps()
+        self.assertEqual(len(gaps), 1)
+        # 原速：间隔应接近录制的 0.3s（而非 interval_ms 的 1s 或 0s）
+        self.assertGreaterEqual(gaps[0], 0.25)
+
+    def test_zero_timestamps_fall_back_to_interval(self):
+        self.engine.update_config(interval_ms=150)
+        self.engine.click_sequence = [
+            ClickAction(0, 0, '', 'press', 0.0, kind='key', key='a'),
+            ClickAction(0, 0, '', 'press', 0.0, kind='key', key='b'),
+        ]
+        gaps = self._run_and_collect_gaps()
+        self.assertEqual(len(gaps), 1)
+        self.assertGreaterEqual(gaps[0], 0.12)
+
+
+class TestModifiersModelRoundtrip(unittest.TestCase):
+    """含 modifiers/chord 的动作经 to_dict/from_dict 与存取往返后保真"""
+
+    def test_chord_roundtrip_via_dict(self):
+        action = ClickAction(0, 0, '', 'press', 1.5, kind='chord',
+                             key='v', modifiers=['ctrl_l', 'shift_r'])
+        restored = ClickAction.from_dict(action.to_dict())
+        self.assertEqual(restored.modifiers, ['ctrl_l', 'shift_r'])
+        self.assertEqual(restored.kind, 'chord')
+
+    def test_legacy_dict_without_modifiers(self):
+        restored = ClickAction.from_dict(
+            {'x': 1, 'y': 2, 'button': 'left', 'action_type': 'press'}
+        )
+        self.assertEqual(restored.modifiers, [])
+
+
+class TestSequenceEditing(unittest.TestCase):
+    """序列编辑：删除 / 移动 / 清空（线程安全方法）"""
+
+    def setUp(self):
+        self.engine = _fresh_engine(MagicMock(), MagicMock())
+        self.engine.click_sequence = [
+            ClickAction(1, 1, 'left', 'press', 0.0),
+            ClickAction(2, 2, 'left', 'release', 0.1),
+            ClickAction(3, 3, 'left', 'press', 0.2),
+        ]
+
+    def test_remove_action(self):
+        self.assertTrue(self.engine.remove_action(1))
+        self.assertEqual(len(self.engine.get_sequence()), 2)
+        self.assertFalse(self.engine.remove_action(99))  # 越界
+        self.assertEqual(len(self.engine.get_sequence()), 2)
+
+    def test_move_action(self):
+        self.assertTrue(self.engine.move_action(0, 2))
+        seq = self.engine.get_sequence()
+        self.assertEqual([a.x for a in seq], [2, 3, 1])
+        self.assertFalse(self.engine.move_action(0, 5))   # 越界
+        self.assertFalse(self.engine.move_action(1, 1))   # 原地
+
+    def test_clear_sequence_notifies_ui(self):
+        notified = []
+        self.engine.on_recording_update = lambda seq: notified.append(len(seq))
+        self.engine.clear_sequence()
+        self.assertEqual(notified, [0])
+        self.assertEqual(len(self.engine.get_sequence()), 0)
+
+    def test_get_sequence_returns_copy(self):
+        seq = self.engine.get_sequence()
+        seq.clear()
+        self.assertEqual(len(self.engine.get_sequence()), 3)
+
+
 if __name__ == '__main__':
     unittest.main()

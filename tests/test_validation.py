@@ -124,5 +124,58 @@ class TestValidation(unittest.TestCase):
         self.assertIn("必须是列表格式", msg)
 
 
+class TestChordAndModifierValidation(unittest.TestCase):
+    """组合键与修饰键校验"""
+
+    def test_valid_chord_accepted(self):
+        ok, msg = validate_macro_action({
+            'kind': 'chord', 'key': 'c',
+            'modifiers': ['ctrl_l'], 'action_type': 'press'
+        })
+        self.assertTrue(ok, msg)
+
+    def test_chord_requires_modifiers(self):
+        ok, _ = validate_macro_action(
+            {'kind': 'chord', 'key': 'c', 'action_type': 'press'}
+        )
+        self.assertFalse(ok)
+
+    def test_chord_rejects_invalid_modifier_name(self):
+        ok, msg = validate_macro_action({
+            'kind': 'chord', 'key': 'c',
+            'modifiers': ['ctrl_l', 'notamod'], 'action_type': 'press'
+        })
+        self.assertFalse(ok)
+        self.assertIn('notamod', msg)
+
+    def test_chord_rejects_release(self):
+        ok, _ = validate_macro_action({
+            'kind': 'chord', 'key': 'c',
+            'modifiers': ['ctrl'], 'action_type': 'release'
+        })
+        self.assertFalse(ok)
+
+    def test_mouse_with_modifiers_accepted(self):
+        ok, msg = validate_macro_action({
+            'x': 1, 'y': 2, 'button': 'left', 'action_type': 'press',
+            'modifiers': ['shift']
+        })
+        self.assertTrue(ok, msg)
+
+    def test_mouse_with_invalid_modifiers_rejected(self):
+        ok, _ = validate_macro_action({
+            'x': 1, 'y': 2, 'button': 'left', 'action_type': 'press',
+            'modifiers': ['f8']
+        })
+        self.assertFalse(ok)
+
+    def test_is_modifier_name(self):
+        from config.validation import is_modifier_name
+        for name in ('ctrl', 'ctrl_l', 'alt_gr', 'shift', 'cmd'):
+            self.assertTrue(is_modifier_name(name), name)
+        for name in ('f8', 'enter', 'a', '', None, 'ctrll'):
+            self.assertFalse(is_modifier_name(name))
+
+
 if __name__ == '__main__':
     unittest.main()

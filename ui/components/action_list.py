@@ -15,22 +15,62 @@ from config.constants import (
 
 
 class ActionList(ttk.Frame):
-    """动作列表组件，显示录制的宏动作序列"""
-    
+    """动作列表组件，显示录制的宏动作序列，支持删除/移动/清空编辑"""
+
     def __init__(self, parent):
         super().__init__(parent)
-        
+
         # 回调函数
         self.on_selection_change: Optional[Callable[[int], None]] = None
-        
+
+        # 编辑回调（由 App 注入；默认空操作）
+        self._on_delete = lambda: None
+        self._on_move_up = lambda: None
+        self._on_move_down = lambda: None
+        self._on_clear = lambda: None
+
         # 创建组件
         self._create_widgets()
-    
+
+    def set_edit_callbacks(self, on_delete: Callable[[], None],
+                           on_move_up: Callable[[], None],
+                           on_move_down: Callable[[], None],
+                           on_clear: Callable[[], None]):
+        """注入编辑回调"""
+        self._on_delete = on_delete
+        self._on_move_up = on_move_up
+        self._on_move_down = on_move_down
+        self._on_clear = on_clear
+
     def _create_widgets(self):
-        """创建列表框和滚动条"""
+        """创建列表框、滚动条与编辑工具条"""
         # 标签
         label = ttk.Label(self, text="录制的动作:", font=(FONT_FAMILY, FONT_SIZE_NORMAL))
         label.pack(anchor=tk.W, pady=(0, PADDING_SMALL))
+
+        # 编辑工具条
+        toolbar = ttk.Frame(self)
+        toolbar.pack(fill=tk.X, pady=(0, PADDING_SMALL))
+
+        self.delete_button = ttk.Button(toolbar, text="删除选中",
+                                        command=lambda: self._on_delete(),
+                                        state=tk.DISABLED)
+        self.delete_button.pack(side=tk.LEFT, padx=(0, PADDING_SMALL))
+
+        self.move_up_button = ttk.Button(toolbar, text="上移",
+                                         command=lambda: self._on_move_up(),
+                                         state=tk.DISABLED)
+        self.move_up_button.pack(side=tk.LEFT, padx=(0, PADDING_SMALL))
+
+        self.move_down_button = ttk.Button(toolbar, text="下移",
+                                           command=lambda: self._on_move_down(),
+                                           state=tk.DISABLED)
+        self.move_down_button.pack(side=tk.LEFT, padx=(0, PADDING_SMALL))
+
+        self.clear_button = ttk.Button(toolbar, text="清空",
+                                       command=lambda: self._on_clear(),
+                                       state=tk.DISABLED)
+        self.clear_button.pack(side=tk.LEFT, padx=(0, PADDING_SMALL))
         
         # 列表框框架
         list_frame = ttk.Frame(self)
@@ -109,7 +149,17 @@ class ActionList(ttk.Frame):
         }
         action_name = action_names.get(action_type, action_type)
 
-        # 键盘动作
+        # 组合键修饰键前缀，如 "Ctrl+"
+        mods = action.get('modifiers') or []
+        mod_prefix = ''.join(self._format_modifier(m) for m in mods)
+
+        # 键盘组合键：如 "组合 [Ctrl+C]"
+        if action.get('kind', 'mouse') == 'chord':
+            key = action.get('key') or '?'
+            display_key = key.upper() if len(key) == 1 else key
+            return f"{index}. 组合 [{mod_prefix}{display_key}] @ {timestamp:.2f}s"
+
+        # 键盘单键
         if action.get('kind', 'mouse') == 'key':
             key = action.get('key') or '?'
             return f"{index}. 按键 [{key}] {action_name} @ {timestamp:.2f}s"
@@ -128,8 +178,21 @@ class ActionList(ttk.Frame):
             'x2': '侧键 2'
         }
         button_name = button_names.get(button, button)
+        combo_suffix = f" + {mod_prefix.rstrip('+')}组合" if mods else ""
+        return (f"{index}. ({x}, {y}) {button_name}{combo_suffix} "
+                f"{action_name} @ {timestamp:.2f}s")
 
-        return f"{index}. ({x}, {y}) {button_name} {action_name} @ {timestamp:.2f}s"
+    @staticmethod
+    def _format_modifier(name: str) -> str:
+        """修饰键名转显示名并带连接符（ctrl_l -> 'Ctrl+'）"""
+        base = name.split('_', 1)[0].capitalize()
+        label = {
+            'Ctrl': 'Ctrl',
+            'Alt': 'Alt',
+            'Shift': 'Shift',
+            'Cmd': 'Win',
+        }.get(base, base)
+        return f"{label}+"
     
     def get_selected_index(self) -> Optional[int]:
         """
@@ -171,6 +234,18 @@ class ActionList(ttk.Frame):
         """
         return self.listbox.size()
     
+    def enable_edit_buttons(self, has_actions: bool):
+        """
+        根据是否有动作启用/禁用编辑工具条
+
+        Args:
+            has_actions: 列表中是否存在动作
+        """
+        state = tk.NORMAL if has_actions else tk.DISABLED
+        for btn in (self.delete_button, self.move_up_button,
+                    self.move_down_button, self.clear_button):
+            btn.config(state=state)
+
     def delete_selected(self):
         """删除选中的项目"""
         selection = self.listbox.curselection()

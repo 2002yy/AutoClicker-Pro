@@ -10,6 +10,7 @@ from typing import Optional
 from config.constants import (
     FONT_FAMILY, FONT_SIZE_NORMAL, FONT_SIZE_SMALL,
     COLOR_DARK, COLOR_DANGER, COLOR_SUCCESS, COLOR_WARNING,
+    COLOR_DISABLED,
     PADDING_SMALL, STATUS_READY, STATUS_RECORDING, STATUS_ENCRYPTION_NOTICE
 )
 
@@ -120,5 +121,7 @@ class StatusBar(ttk.Frame):
 
     def set_encryption_notice(self, show: bool = True):
         """显示或隐藏加密安全提示"""
-        self.notice_label.pack(fill=tk.X if show else None)
-        self.notice_label.config(state=tk.NORMAL if show else tk.DISABLED)
+        if show:
+            self.notice_label.pack(anchor=tk.W, pady=(2, 0))
+        else:
+            self.notice_label.pack_forget()

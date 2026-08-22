@@ -65,8 +65,8 @@ class SettingsPanel(ttk.Frame):
         label = ttk.Label(self, text=label_text, font=(FONT_FAMILY, FONT_SIZE_NORMAL))
         label.grid(row=row, column=0, sticky=GRID_STICKY_W, pady=PADDING_SMALL)
 
-        # 变量
-        var = tk.StringVar(value=default_value)
+        # 变量（显式绑定到本组件，避免残留至解释器退出期）
+        var = tk.StringVar(master=self, value=default_value)
         self.variables[var_name] = var
 
         # 输入框（只允许输入数字）
