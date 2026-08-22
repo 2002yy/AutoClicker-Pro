@@ -442,18 +442,34 @@ class AutoClickerApp:
             self.action_list.select_index(select)
 
     def _on_delete_action(self):
-        """删除当前选中的动作，选中项保持在原位置附近"""
-        index = self.action_list.get_selected_index()
-        if index is None or not self.engine.remove_action(index):
+        """删除当前选中行对应的动作；折叠的轨迹行删除整段"""
+        row_index = self.action_list.get_selected_index()
+        rng = self.action_list.get_row_range(row_index)
+        if rng is None:
             return
-        remaining = len(self.engine.get_sequence())
-        self._refresh_actions_ui(select=min(index, remaining - 1))
+        start, end = rng
+        removed = (self.engine.remove_range(start, end) if end > start
+                   else (1 if self.engine.remove_action(start) else 0))
+        if not removed:
+            return
+        remaining_rows = len(self.engine.get_sequence())
+        self._refresh_actions_ui(select=min(start, remaining_rows - 1))
 
     def _on_move_action(self, delta: int):
-        """把选中的动作上移(-1)/下移(+1)，保持其选中状态"""
-        index = self.action_list.get_selected_index()
-        if index is None:
+        """把选中的动作上移(-1)/下移(+1)，保持其选中状态。
+
+        折叠的轨迹段不支持整体移动（拖拽顺序即录制顺序）。
+        """
+        row_index = self.action_list.get_selected_index()
+        if row_index is None:
             return
+        if self.action_list.is_folded_row(row_index):
+            self.status_bar.set_status("拖拽轨迹段不支持整体移动，如需调整请删除后重录")
+            return
+        rng = self.action_list.get_row_range(row_index)
+        if rng is None:
+            return
+        index = rng[0]
         target = index + delta
         if not self.engine.move_action(index, target):
             return
@@ -464,12 +480,14 @@ class AutoClickerApp:
         self.engine.clear_sequence()
 
     def _on_list_selection_change(self, index: int):
-        """选中项变化 -> 上移/下移按钮随边界启停"""
-        total = len(self.engine.get_sequence())
+        """选中项变化 -> 上移/下移按钮随边界启停；折叠行禁用移动"""
+        rows = self.action_list.get_count()
+        folded = self.action_list.is_folded_row(index)
+        can_move = not folded
         self.action_list.move_up_button.config(
-            state=tk.NORMAL if index > 0 else tk.DISABLED)
+            state=tk.NORMAL if can_move and index > 0 else tk.DISABLED)
         self.action_list.move_down_button.config(
-            state=tk.NORMAL if 0 <= index < total - 1 else tk.DISABLED)
+            state=tk.NORMAL if can_move and 0 <= index < rows - 1 else tk.DISABLED)
     
     # ==================== 引擎回调 ====================
 

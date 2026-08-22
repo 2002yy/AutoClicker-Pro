@@ -31,7 +31,7 @@ Do not use it to violate software terms of service, bypass anti-cheat systems, a
 - 🖱️ **鼠标连点** — 支持左键/右键/中键，固定坐标，按配置间隔自动点击（**已实现**）
 - 🔴 **宏录制（鼠标 + 键盘）** — 录制鼠标点击与键盘按键序列，回放按录制时的真实节奏执行（时间戳原速回放），支持指定次数重复（**已实现**；录制时落在本程序窗口内的点击自动忽略）
 - ⌨️ **键盘连点 / 录制** — 录制键盘按键并在回放时自动按下释放（**已实现**）
-- ⌨️ **组合键与拖拽宏** — Ctrl+C / Shift+单击 等修饰键组合录为单条动作并整体还原；按下-移动-释放的拖拽序列按原样回放（**已实现**）
+- ⌨️ **组合键与拖拽宏** — Ctrl+C / Shift+单击 等修饰键组合录为单条动作并整体还原；拖拽录制移动轨迹（5px/30ms 双阈值采样），回放按原速平滑重演而非瞬移（**已实现**）
 - 🪟 **窗口锚定坐标** — 录制时记录点击所在的前台窗口标题与相对偏移，回放时按同名窗口当前位置重算坐标：窗口挪位/多显示器切换后宏依然点得准。找不到目标窗口时自动降级为绝对坐标并在状态栏提示（**已实现**）
 - 🔐 **加密存储** — 宏文件采用本地 Fernet 对称加密（**已实现**；密钥存于用户目录 `~/.autoclicker_pro/`，属**本地混淆级**保护，并非对抗同机攻击者的机密保护）
 - ⚙️ **灵活配置** — 毫秒级间隔、按住时长、重复次数/间隔设置（**已实现**）
@@ -44,6 +44,8 @@ Do not use it to violate software terms of service, bypass anti-cheat systems, a
 > 说明：功能均已由单元测试覆盖（含 GUI 冒烟测试），测试数以 CI 实时结果为准。加密存储为本地混淆级保护，详见「合法使用与免责声明」。
 >
 > 回放时序说明：录制产生的序列按各动作的原始时间戳回放（真实节奏）；无时间戳数据的旧文件退回固定"点击间隔"均速回放。
+>
+> 轨迹说明：拖拽轨迹仅在鼠标按键按住期间采样（双阈值：位移 ≥5px 且间隔 ≥30ms），动作列表中折叠为一行显示，可整段删除。
 
 ---
 
@@ -177,7 +179,7 @@ MIT License — 详见 [LICENSE](LICENSE)
 - [x] Macro editing UI
 - [x] Hotkey customization
 - [x] Coordinate adaptation (window-title anchoring with graceful fallback)
-- [ ] Mouse movement trajectory recording (smooth drags)
+- [x] Mouse movement trajectory recording (smooth drags)
 - [ ] Multi-profile macro management
 - [ ] Scheduled auto-click tasks
 - [ ] Internationalization (i18n)

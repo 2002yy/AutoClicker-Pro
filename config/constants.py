@@ -5,7 +5,7 @@
 
 # ==================== 应用程序基础配置 ====================
 APP_NAME = "自动点击器 Pro"
-APP_VERSION = "2.2.0"
+APP_VERSION = "2.3.0"
 APP_WIDTH = 450
 APP_HEIGHT = 650
 APP_MIN_WIDTH = 400
@@ -43,6 +43,10 @@ DEFAULT_REPEAT_INTERVAL = 1000
 MS_PER_SECOND = 1000
 MS_PER_MINUTE = 60000
 MS_PER_HOUR = 3600000
+
+# ==================== 鼠标轨迹采样（拖拽录制） ====================
+MOVE_MIN_DISTANCE_PX = 5    # 距上次采样点的最小位移，低于此值丢弃
+MOVE_MIN_INTERVAL_MS = 30   # 距上次采样的最小时间间隔
 
 # ==================== 全局快捷键定义 ====================
 # 注意：这里使用 pynput 的按键名（小写），由 utils.hotkey_manager 注册为全局热键，

@@ -221,15 +221,32 @@ def validate_time_inputs(interval_ms: Any, record_interval: Any,
     return True, ""
 
 
+def _validate_anchor_fields(action: Dict[str, Any]) -> Tuple[bool, str]:
+    """窗口锚定可选字段：要么全缺省，要么 title + 双偏移齐全且类型正确"""
+    anchor_title = action.get('anchor_title')
+    rel_x = action.get('win_rel_x')
+    rel_y = action.get('win_rel_y')
+    has_anchor = any(v is not None for v in (anchor_title, rel_x, rel_y))
+    if not has_anchor:
+        return True, ""
+    if not isinstance(anchor_title, str) or not anchor_title.strip():
+        return False, "窗口锚定缺少有效标题 (anchor_title)"
+    for field_name, value in (('win_rel_x', rel_x), ('win_rel_y', rel_y)):
+        if not isinstance(value, int) or isinstance(value, bool):
+            return False, f"窗口相对坐标 {field_name} 必须是整数"
+    return True, ""
+
+
 def validate_macro_action(action: Dict[str, Any]) -> Tuple[bool, str]:
     """
     验证宏动作数据
 
-    支持三种动作：
+    支持四种动作：
     - 鼠标动作（kind 缺省或为 'mouse'）：需 x/y/button/action_type；
-      可选 modifiers（组合键点击，如 Shift+单击）
+      可选 modifiers（组合键点击）、可选窗口锚定字段
     - 键盘单键（kind='key'）：需 key（规范键名）/action_type，x/y 不使用
     - 键盘组合键（kind='chord'）：需 key + 非空合法的 modifiers 列表
+    - 鼠标移动（kind='move'）：需 x/y；无 button 要求，可携带锚定字段
 
     Args:
         action: 宏动作字典
@@ -241,6 +258,15 @@ def validate_macro_action(action: Dict[str, Any]) -> Tuple[bool, str]:
         return False, "宏动作数据必须是字典格式"
 
     kind = action.get('kind', 'mouse')
+
+    # 鼠标移动轨迹点：仅坐标（+可选锚定）
+    if kind == 'move':
+        if 'x' not in action or 'y' not in action:
+            return False, "移动动作缺少必需字段：x/y"
+        is_valid, error_msg = validate_coordinate(action['x'], action['y'])
+        if not is_valid:
+            return False, error_msg
+        return _validate_anchor_fields(action)
 
     # 键盘组合键：action_type + key + modifiers
     if kind == 'chord':
@@ -300,17 +326,10 @@ def validate_macro_action(action: Dict[str, Any]) -> Tuple[bool, str]:
         if not is_valid:
             return False, error_msg
 
-    # 可选窗口锚定字段：要么全缺省，要么 title + 双偏移齐全且类型正确
-    anchor_title = action.get('anchor_title')
-    rel_x = action.get('win_rel_x')
-    rel_y = action.get('win_rel_y')
-    has_anchor = any(v is not None for v in (anchor_title, rel_x, rel_y))
-    if has_anchor:
-        if not isinstance(anchor_title, str) or not anchor_title.strip():
-            return False, "窗口锚定缺少有效标题 (anchor_title)"
-        for field_name, value in (('win_rel_x', rel_x), ('win_rel_y', rel_y)):
-            if not isinstance(value, int) or isinstance(value, bool):
-                return False, f"窗口相对坐标 {field_name} 必须是整数"
+    # 可选窗口锚定字段（鼠标动作）
+    is_valid, error_msg = _validate_anchor_fields(action)
+    if not is_valid:
+        return False, error_msg
 
     # 验证时间戳（可选）
     if 'timestamp' in action:

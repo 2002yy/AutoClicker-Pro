@@ -177,6 +177,29 @@ class TestChordAndModifierValidation(unittest.TestCase):
             self.assertFalse(is_modifier_name(name))
 
 
+class TestMoveValidation(unittest.TestCase):
+    """移动轨迹动作（kind='move'）校验"""
+
+    def test_valid_move_accepted(self):
+        ok, msg = validate_macro_action(
+            {'kind': 'move', 'x': 5, 'y': 6, 'timestamp': 0.1})
+        self.assertTrue(ok, msg)
+
+    def test_move_without_coords_rejected(self):
+        ok, _ = validate_macro_action({'kind': 'move'})
+        self.assertFalse(ok)
+
+    def test_move_with_anchor_accepted(self):
+        ok, msg = validate_macro_action({
+            'kind': 'move', 'x': 5, 'y': 6,
+            'anchor_title': '记事本', 'win_rel_x': 1, 'win_rel_y': 2})
+        self.assertTrue(ok, msg)
+
+    def test_move_negative_coord_rejected(self):
+        ok, _ = validate_macro_action({'kind': 'move', 'x': -1, 'y': 2})
+        self.assertFalse(ok)
+
+
 class TestAnchorValidation(unittest.TestCase):
     """窗口锚定字段校验"""
 

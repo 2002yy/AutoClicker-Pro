@@ -5,7 +5,7 @@
 
 import tkinter as tk
 from tkinter import ttk
-from typing import List, Dict, Any, Optional, Callable
+from typing import List, Dict, Any, Optional, Callable, Tuple
 
 from config.constants import (
     FONT_FAMILY, FONT_SIZE_NORMAL,
@@ -22,6 +22,9 @@ class ActionList(ttk.Frame):
 
         # 回调函数
         self.on_selection_change: Optional[Callable[[int], None]] = None
+
+        # 行 -> 动作序列闭区间映射（折叠的轨迹行覆盖多个下标）
+        self._row_ranges: List[Tuple[int, int]] = []
 
         # 编辑回调（由 App 注入；默认空操作）
         self._on_delete = lambda: None
@@ -110,22 +113,64 @@ class ActionList(ttk.Frame):
     
     def update_actions(self, actions: List[Dict[str, Any]]):
         """
-        更新动作列表
+        更新动作列表（连续的移动轨迹点折叠为一行）
 
         Args:
             actions: 宏动作列表
         """
         # 清空现有项目
         self.listbox.delete(0, tk.END)
+        self._row_ranges = []
 
-        # 添加新项目
-        for i, action in enumerate(actions):
-            action_str = self._format_action(i + 1, action)
-            self.listbox.insert(tk.END, action_str)
+        i = 0
+        n = len(actions)
+        while i < n:
+            action = actions[i]
+            if action.get('kind', 'mouse') == 'move':
+                # 收集连续移动点，折叠为一行
+                j = i
+                while j < n and actions[j].get('kind', 'mouse') == 'move':
+                    j += 1
+                run_len = j - i
+                row_no = len(self._row_ranges) + 1
+                if run_len > 1:
+                    first_ts = float(actions[i].get('timestamp') or 0)
+                    last_ts = float(actions[j - 1].get('timestamp') or 0)
+                    label = (f"{row_no}. ⇢ 拖拽轨迹 ×{run_len} 点 "
+                             f"@ {first_ts:.2f}s~{last_ts:.2f}s")
+                else:
+                    label = self._format_action(row_no, action)
+                self._row_ranges.append((i, j - 1))
+                self.listbox.insert(tk.END, label)
+                i = j
+            else:
+                row_no = len(self._row_ranges) + 1
+                self._row_ranges.append((i, i))
+                self.listbox.insert(tk.END, self._format_action(row_no, action))
+                i += 1
 
         # 录制时自动滚动到底部，让用户看到最新动作
         if actions:
             self.listbox.see(tk.END)
+
+    def get_row_range(self, row_index: Optional[int]) -> Optional[Tuple[int, int]]:
+        """
+        把列表行号映射为动作序列下标的闭区间
+
+        Args:
+            row_index: 列表行号；None 直接返回 None
+
+        Returns:
+            (起始下标, 结束下标)（含两端）；越界返回 None
+        """
+        if row_index is None or not (0 <= row_index < len(self._row_ranges)):
+            return None
+        return self._row_ranges[row_index]
+
+    def is_folded_row(self, row_index: Optional[int]) -> bool:
+        """该行是否为折叠的轨迹段（覆盖多个动作）"""
+        rng = self.get_row_range(row_index)
+        return rng is not None and rng[1] > rng[0]
     
     def _format_action(self, index: int, action: Dict[str, Any]) -> str:
         """
@@ -164,9 +209,15 @@ class ActionList(ttk.Frame):
             key = action.get('key') or '?'
             return f"{index}. 按键 [{key}] {action_name} @ {timestamp:.2f}s"
 
-        # 鼠标动作
         x = action.get('x', 0)
         y = action.get('y', 0)
+
+        # 单条移动轨迹点
+        if action.get('kind', 'mouse') == 'move':
+            anchor = action.get('anchor_title')
+            anchor_suffix = f" [窗:{anchor[:8]}]" if anchor else ""
+            return f"{index}. 移动 ({x}, {y}) @ {timestamp:.2f}s{anchor_suffix}"
+
         button = action.get('button', 'left')
 
         # 翻译按钮名称
@@ -259,7 +310,7 @@ class ActionList(ttk.Frame):
     def select_index(self, index: int):
         """
         选中指定索引的项目
-        
+
         Args:
             index: 要选中的索引
         """
@@ -267,3 +318,5 @@ class ActionList(ttk.Frame):
             self.listbox.selection_clear(0, tk.END)
             self.listbox.selection_set(index)
             self.listbox.see(index)
+            # 程序化选中同样触发选择回调，保证依赖选中的状态同步
+            self._on_select(None)

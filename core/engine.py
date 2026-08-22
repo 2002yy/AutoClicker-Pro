@@ -15,7 +15,8 @@ from config.constants import (
     DEFAULT_HOLD_DURATION, DEFAULT_REPEAT_COUNT, DEFAULT_REPEAT_INTERVAL,
     HOTKEY_START_STOP, HOTKEY_START_RECORDING,
     HOTKEY_STOP_RECORDING, HOTKEY_CANCEL,
-    STATUS_RECORDING
+    STATUS_RECORDING,
+    MOVE_MIN_DISTANCE_PX, MOVE_MIN_INTERVAL_MS
 )
 from config.encryption import encrypt_macro, decrypt_macro
 from config.validation import (
@@ -59,6 +60,10 @@ class ClickerEngine:
         # 录制期间按住未释放的修饰键（组合键追踪）：
         # [{'name': 'ctrl_l', 'used': False}]；used=True 表示已被某个组合键消费
         self._held_modifiers: List[Dict[str, Any]] = []
+        # 拖拽轨迹采样：仅鼠标按键按下期间记录移动点
+        self._mouse_down = False
+        self._last_move_point: Optional[tuple] = None
+        self._last_move_time = 0.0
 
         # 配置参数
         self.interval_ms = DEFAULT_INTERVAL_MS
@@ -265,13 +270,17 @@ class ClickerEngine:
     def _perform_action(self, action, paired_release_index: Optional[int]):
         """执行单个动作（回放主入口）
 
+        - kind='move'：仅移动鼠标到解析后的坐标（拖拽轨迹点，无按键）；
         - kind='chord'：修饰键按录制顺序按下 -> 轻点触发键 -> 修饰键逆序释放；
         - kind='key'：配对的 press 只按下（release 由时间轴负责），
           孤立 press 按"轻点"语义（hold_duration>0 时按住指定时长）；
         - kind='mouse'：带 modifiers 时先对称按下/释放修饰键；
           配对 press 不自动抬起（还原拖拽），孤立 press 注入 hold_duration。
         """
-        if action.kind == 'chord':
+        if action.kind == 'move':
+            x, y = self._resolve_anchor(action)
+            self.mouse_controller.position = (x, y)
+        elif action.kind == 'chord':
             self._perform_chord_action(action)
         elif action.kind == 'key':
             self._perform_key_action(action, paired_release_index is not None)
@@ -404,6 +413,8 @@ class ClickerEngine:
         self.is_recording = True
         self.click_sequence = []
         self._held_modifiers = []
+        self._mouse_down = False
+        self._last_move_point = None
         self.recording_start_time = time.time()
 
         self._emit_event(EngineEvent.RECORDING_STARTED)
@@ -445,14 +456,12 @@ class ClickerEngine:
 
         # 丢弃仍按住的修饰键（不补录），避免半截组合键入宏
         self._held_modifiers = []
+        self._mouse_down = False
+        self._last_move_point = None
 
         self._emit_event(EngineEvent.RECORDING_STOPPED)
         if self.on_status_change:
             self.on_status_change("录制已停止")
-
-    def _on_mouse_move(self, x, y):
-        """鼠标移动回调"""
-        pass  # 暂时不需要处理移动事件
 
     def _append_action(self, action: ClickAction):
         """线程安全地追加动作并节流通知 UI"""
@@ -468,6 +477,21 @@ class ClickerEngine:
         """把当前按住的所有修饰键标记为已消费（参与过组合键/组合点击）"""
         for entry in self._held_modifiers:
             entry['used'] = True
+
+    def _capture_anchor(self, x: int, y: int) -> Tuple[Optional[str], Optional[int], Optional[int]]:
+        """捕获 (x,y) 所在前台窗口的锚定信息；取不到返回 (None, None, None)"""
+        provider = self.foreground_provider
+        if provider is None:
+            return None, None, None
+        try:
+            info: Optional[WindowRect] = provider()
+        except Exception:
+            info = None
+        if (info is not None
+                and info.left <= x < info.right
+                and info.top <= y < info.bottom):
+            return info.title, x - info.left, y - info.top
+        return None, None, None
 
     def _on_mouse_click(self, x, y, button, pressed):
         """鼠标点击回调"""
@@ -496,6 +520,13 @@ class ClickerEngine:
 
         action_type = 'press' if pressed else 'release'
 
+        # 拖拽轨迹只在"有按键按住"期间采样；
+        # 按下时以点击点为初始基线，让抖动过滤从落点即刻生效
+        self._mouse_down = pressed
+        if pressed:
+            self._last_move_point = (x, y)
+            self._last_move_time = time.time()
+
         # 组合键点击（如 Shift+单击）：修饰键记录在 press 与 release 两侧，
         # 回放侧负责对称按下/释放；这些修饰键视为已消费。
         mods: List[str] = []
@@ -507,21 +538,7 @@ class ClickerEngine:
             self._mark_modifiers_used()
 
         # 窗口锚定：点击落在前台窗口客户区内时，记录标题与相对偏移
-        anchor_title: Optional[str] = None
-        rel_x: Optional[int] = None
-        rel_y: Optional[int] = None
-        provider = self.foreground_provider
-        if provider is not None:
-            try:
-                info: Optional[WindowRect] = provider()
-            except Exception:
-                info = None
-            if (info is not None
-                    and info.left <= x < info.right
-                    and info.top <= y < info.bottom):
-                anchor_title = info.title
-                rel_x = x - info.left
-                rel_y = y - info.top
+        anchor_title, rel_x, rel_y = self._capture_anchor(x, y)
 
         timestamp = time.time() - self.recording_start_time
         click_action = ClickAction(x, y, button_name, action_type, timestamp,
@@ -530,6 +547,33 @@ class ClickerEngine:
                                    win_rel_x=rel_x,
                                    win_rel_y=rel_y)
         self._append_action(click_action)
+
+    def _on_mouse_move(self, x, y):
+        """鼠标移动回调：仅在拖拽（有按键按住）期间按双阈值采样轨迹"""
+        if not self.is_recording or not self._mouse_down:
+            return
+
+        now = time.time()
+        if self._last_move_point is not None:
+            last_x, last_y = self._last_move_point
+            dist_sq = (x - last_x) ** 2 + (y - last_y) ** 2
+            if dist_sq < MOVE_MIN_DISTANCE_PX ** 2:
+                return
+            elapsed_ms = (now - self._last_move_time) * 1000.0
+            if elapsed_ms < MOVE_MIN_INTERVAL_MS:
+                return
+
+        self._last_move_point = (x, y)
+        self._last_move_time = now
+
+        anchor_title, rel_x, rel_y = self._capture_anchor(x, y)
+        timestamp = now - self.recording_start_time
+        move_action = ClickAction(x, y, '', 'move', timestamp,
+                                  kind='move',
+                                  anchor_title=anchor_title,
+                                  win_rel_x=rel_x,
+                                  win_rel_y=rel_y)
+        self._append_action(move_action)
 
     def _maybe_notify_recording(self):
         """节流录制通知（100ms 内最多触发一次）"""
@@ -627,6 +671,15 @@ class ClickerEngine:
                 del self.click_sequence[index]
                 return True
         return False
+
+    def remove_range(self, start: int, end: int) -> int:
+        """删除闭区间 [start, end] 内的动作，返回实际删除数量"""
+        with self._lock:
+            n = len(self.click_sequence)
+            if not (0 <= start <= end < n):
+                return 0
+            del self.click_sequence[start:end + 1]
+            return end - start + 1
 
     def move_action(self, src: int, dst: int) -> bool:
         """把 src 下标的动作移动到 dst 下标（其余元素顺移）；越界返回 False"""

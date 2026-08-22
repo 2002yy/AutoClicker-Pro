@@ -672,5 +672,134 @@ class TestAnchorPlayback(unittest.TestCase):
         self.assertEqual(warnings, [])
 
 
+class TestTrajectoryRecording(unittest.TestCase):
+    """拖拽轨迹录制：仅按键期间采样，双阈值（5px / 30ms）过滤"""
+
+    def setUp(self):
+        self.engine = _fresh_engine(MagicMock(), MagicMock())
+        self.engine.is_recording = True
+        self.engine.recording_start_time = time.time()
+        self.engine.click_sequence = []
+        self.engine.foreground_provider = (
+            lambda: _win('记事本', 0, 0, 1000, 800))
+
+    def _click(self, x, y, pressed):
+        from pynput import mouse
+        self.engine._on_mouse_click(x, y, mouse.Button.left, pressed)
+
+    def _moves(self):
+        return [a for a in self.engine.click_sequence if a.kind == 'move']
+
+    def test_only_records_while_button_down(self):
+        self.engine._on_mouse_move(50, 50)          # 未按下 -> 忽略
+        self.assertEqual(len(self._moves()), 0)
+        self._click(10, 10, True)
+        self.engine._last_move_time = time.time() - 0.05  # 通过时间门
+        self.engine._on_mouse_move(300, 300)        # 按下后 -> 记录
+        self.assertEqual(len(self._moves()), 1)
+
+    def test_distance_threshold_filters_jitter(self):
+        self._click(100, 100, True)
+        self.engine._last_move_time = time.time() - 0.05
+        self.engine._on_mouse_move(101, 101)        # 位移 ~1.4px < 5px
+        self.assertEqual(len(self._moves()), 0)
+
+    def test_interval_threshold_enforced(self):
+        self._click(100, 100, True)
+        self.engine._last_move_time = time.time() - 0.05
+        self.engine._on_mouse_move(200, 200)        # 距离+间隔均足 -> 记录
+        self.engine._on_mouse_move(400, 400)        # 距离够、间隔 <30ms -> 拦下
+        self.assertEqual(len(self._moves()), 1)
+
+    def test_far_and_slow_moves_recorded(self):
+        self._click(100, 100, True)
+        for x, y in ((150, 150), (250, 250), (350, 350)):
+            self.engine._last_move_time = time.time() - 0.05  # 通过 30ms 门
+            self.engine._on_mouse_move(x, y)
+        self.assertEqual(len(self._moves()), 3)
+
+    def test_no_sampling_after_release(self):
+        self._click(100, 100, True)
+        self.engine._last_move_time = time.time() - 0.05
+        self.engine._on_mouse_move(200, 200)
+        self._click(200, 200, False)
+        self.engine._on_mouse_move(500, 500)        # 已释放 -> 忽略
+        self.assertEqual(len(self._moves()), 1)
+
+    def test_move_carries_anchor_and_timestamps_ordered(self):
+        self._click(100, 100, True)
+        self.engine._last_move_time = time.time() - 0.05
+        self.engine._on_mouse_move(300, 300)
+        move = self._moves()[0]
+        self.assertEqual(move.anchor_title, '记事本')
+        self.assertEqual((move.win_rel_x, move.win_rel_y), (300, 300))
+        seq = self.engine.click_sequence
+        self.assertLessEqual(seq[0].timestamp, seq[1].timestamp)
+
+
+class TestMovePlayback(unittest.TestCase):
+    """拖拽轨迹回放：press -> 移动点按序执行 -> release"""
+
+    def setUp(self):
+        self.fake_mouse = _FakeMouseController()
+        self.engine = _fresh_engine(self.fake_mouse, MagicMock())
+
+    def test_drag_replays_smooth_trajectory(self):
+        self.engine.click_sequence = [
+            ClickAction(100, 100, 'left', 'press', 0.0),
+            ClickAction(110, 110, '', 'move', 0.05, kind='move'),
+            ClickAction(130, 140, '', 'move', 0.10, kind='move'),
+            ClickAction(130, 140, 'left', 'release', 0.15),
+        ]
+        self.engine.update_config(hold_duration=0, interval_ms=0,
+                                  repeat_count=1)
+        self.assertTrue(self.engine.start_clicking())
+        deadline = time.perf_counter() + 3.0
+        while self.engine.is_running and time.perf_counter() < deadline:
+            time.sleep(0.01)
+        self.assertFalse(self.engine.is_running)
+        self.assertEqual(
+            self.fake_mouse.ops,
+            [('move', (100, 100)), ('press',),
+             ('move', (110, 110)), ('move', (130, 140)),
+             ('move', (130, 140)), ('release',)]
+        )
+
+    def test_move_respects_window_anchor(self):
+        self.engine.window_locater = (
+            lambda title: _win(title, 500, 500, 1500, 1500))
+        self.engine.click_sequence = [
+            ClickAction(10, 20, '', 'move', 0.0, kind='move',
+                        anchor_title='记事本', win_rel_x=10, win_rel_y=20),
+        ]
+        self.engine.update_config(interval_ms=0, repeat_count=1)
+        self.assertTrue(self.engine.start_clicking())
+        deadline = time.perf_counter() + 3.0
+        while self.engine.is_running and time.perf_counter() < deadline:
+            time.sleep(0.01)
+        self.assertIn(('move', (510, 520)), self.fake_mouse.ops)
+
+
+class TestRemoveRange(unittest.TestCase):
+    """区间删除：折叠轨迹行整段删除的引擎侧支撑"""
+
+    def setUp(self):
+        self.engine = _fresh_engine(MagicMock(), MagicMock())
+        self.engine.click_sequence = [
+            ClickAction(i, i, 'left', 'press', float(i)) for i in range(5)
+        ]
+
+    def test_remove_middle_range(self):
+        removed = self.engine.remove_range(1, 3)
+        self.assertEqual(removed, 3)
+        self.assertEqual([a.x for a in self.engine.get_sequence()], [0, 4])
+
+    def test_remove_invalid_range(self):
+        self.assertEqual(self.engine.remove_range(3, 1), 0)
+        self.assertEqual(self.engine.remove_range(-1, 2), 0)
+        self.assertEqual(self.engine.remove_range(4, 9), 0)
+        self.assertEqual(len(self.engine.get_sequence()), 5)
+
+
 if __name__ == '__main__':
     unittest.main()

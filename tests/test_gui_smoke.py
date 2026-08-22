@@ -259,5 +259,74 @@ class TestApplyAndEditFlow(unittest.TestCase):
             app.on_close()
 
 
+class TestTrajectoryFolding(unittest.TestCase):
+    """连续移动轨迹的折叠显示与区间编辑"""
+
+    def setUp(self):
+        self.root = _root_or_skip(self)
+
+    def tearDown(self):
+        _teardown_root(self.root)
+
+    @staticmethod
+    def _drag_sequence():
+        from core.macros import ClickAction
+        return [
+            ClickAction(10, 10, 'left', 'press', 0.0),
+            ClickAction(20, 20, '', 'move', 0.05, kind='move'),
+            ClickAction(30, 30, '', 'move', 0.08, kind='move'),
+            ClickAction(40, 40, '', 'move', 0.11, kind='move'),
+            ClickAction(40, 40, 'left', 'release', 0.15),
+        ]
+
+    def test_folding_maps_rows_to_ranges(self):
+        app, _ = TestApplyAndEditFlow._make_app(self.root)
+        try:
+            app.engine.click_sequence = self._drag_sequence()
+            app._refresh_actions_ui()
+            # 折叠后 3 行：press / 轨迹×3 / release
+            self.assertEqual(app.action_list.get_count(), 3)
+            self.assertEqual(app.action_list.get_row_range(0), (0, 0))
+            self.assertEqual(app.action_list.get_row_range(1), (1, 3))
+            self.assertEqual(app.action_list.get_row_range(2), (4, 4))
+            self.assertTrue(app.action_list.is_folded_row(1))
+            self.assertFalse(app.action_list.is_folded_row(0))
+            row_text = app.action_list.listbox.get(1)
+            self.assertIn('拖拽轨迹', row_text)
+            self.assertIn('×3', row_text)
+        finally:
+            app.on_close()
+
+    def test_delete_folded_row_removes_whole_run(self):
+        app, _ = TestApplyAndEditFlow._make_app(self.root)
+        try:
+            app.engine.click_sequence = self._drag_sequence()
+            app._refresh_actions_ui()
+            app.action_list.select_index(1)      # 轨迹行
+            app._on_delete_action()
+            remaining = [a.kind for a in app.engine.get_sequence()]
+            self.assertEqual(remaining, ['mouse', 'mouse'])  # press+release
+        finally:
+            app.on_close()
+
+    def test_move_on_folded_row_rejected_with_hint(self):
+        app, _ = TestApplyAndEditFlow._make_app(self.root)
+        try:
+            app.engine.click_sequence = self._drag_sequence()
+            app._refresh_actions_ui()
+            app.action_list.select_index(1)
+            app._on_move_action(-1)
+            unchanged = [a.kind for a in app.engine.get_sequence()]
+            self.assertEqual(unchanged,
+                             ['mouse', 'move', 'move', 'move', 'mouse'])
+            self.assertIn("不支持整体移动",
+                          app.status_bar.status_label.cget("text"))
+            # 上移按钮应处于禁用态（选中折叠行时）
+            state = str(app.action_list.move_up_button.cget("state"))
+            self.assertEqual(state, "disabled")
+        finally:
+            app.on_close()
+
+
 if __name__ == "__main__":
     unittest.main()
