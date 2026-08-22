@@ -14,11 +14,11 @@ from config.constants import (
 )
 
 
-class ActionList(ttk.Frame):
-    """动作列表组件，显示录制的宏动作序列，支持删除/移动/清空编辑"""
+class ActionList(ttk.LabelFrame):
+    """动作列表组件（标题框"动作序列"），显示宏动作并支持编辑"""
 
     def __init__(self, parent):
-        super().__init__(parent)
+        super().__init__(parent, text="动作序列", padding=PADDING_SMALL)
 
         # 回调函数
         self.on_selection_change: Optional[Callable[[int], None]] = None
@@ -51,10 +51,6 @@ class ActionList(ttk.Frame):
 
     def _create_widgets(self):
         """创建列表框、滚动条与编辑工具条"""
-        # 标签
-        label = ttk.Label(self, text="录制的动作:", font=(FONT_FAMILY, FONT_SIZE_NORMAL))
-        label.pack(anchor=tk.W, pady=(0, PADDING_SMALL))
-
         # 编辑工具条
         toolbar = ttk.Frame(self)
         toolbar.pack(fill=tk.X, pady=(0, PADDING_SMALL))

@@ -31,32 +31,38 @@ class MacroLibraryPanel(ttk.LabelFrame):
         self._name_to_display = {}
         self._display_to_name = {}
 
-        # 宏名下拉框（width 提供最小请求宽度；minsize 保证窄窗口下也不被压没）
+        # 宏名下拉框（独占整行，宽下拉能完整展示"名称+元数据"）
         self.combo = ttk.Combobox(self, state="readonly", width=16)
-        self.combo.grid(row=0, column=0, sticky="ew", padx=(0, PADDING_SMALL))
-        self.columnconfigure(0, weight=1, minsize=150)
+        self.combo.grid(row=0, column=0, columnspan=4, sticky="ew")
+        self.columnconfigure(0, weight=1, uniform="libbtn")
 
         self.load_button = ttk.Button(
             self, text="加载", command=self._load_selected,
             state=tk.DISABLED)
-        self.load_button.grid(row=0, column=1, padx=(0, PADDING_SMALL))
+        self.load_button.grid(row=1, column=0, sticky="ew",
+                              padx=(0, PADDING_SMALL), pady=(PADDING_SMALL, 0))
 
         self.delete_button = ttk.Button(
             self, text="删除", command=self._delete_selected,
             state=tk.DISABLED)
-        self.delete_button.grid(row=0, column=2, padx=(0, PADDING_SMALL))
+        self.delete_button.grid(row=1, column=1, sticky="ew",
+                                padx=(0, PADDING_SMALL), pady=(PADDING_SMALL, 0))
 
         export_button = ttk.Button(
             self, text="导出", command=lambda: self._on_export_cb())
-        export_button.grid(row=0, column=3, padx=(0, PADDING_SMALL))
+        export_button.grid(row=1, column=2, sticky="ew",
+                           padx=(0, PADDING_SMALL), pady=(PADDING_SMALL, 0))
 
         import_button = ttk.Button(
             self, text="导入", command=lambda: self._on_import_cb())
-        import_button.grid(row=0, column=4)
+        import_button.grid(row=1, column=3, sticky="ew",
+                           pady=(PADDING_SMALL, 0))
+        for col in range(4):
+            self.columnconfigure(col, weight=1)
 
         # 选中宏的元数据详情行
         self.detail_label = ttk.Label(self, text="", font=(FONT_FAMILY, FONT_SIZE_SMALL))
-        self.detail_label.grid(row=1, column=0, columnspan=5,
+        self.detail_label.grid(row=2, column=0, columnspan=4,
                                sticky=tk.W, pady=(PADDING_SMALL, 0))
 
     def set_detail(self, text: str):

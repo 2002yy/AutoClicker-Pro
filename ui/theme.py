@@ -48,8 +48,10 @@ def apply_win11_theme(root: tk.Tk) -> None:
         style.configure('TLabel', background=WIN11_BG, foreground=WIN11_TEXT)
         style.configure('TLabelframe', background=WIN11_BG,
                         bordercolor=WIN11_BORDER, relief='flat')
+        # 区块标题：加粗深色，与正文形成层次
         style.configure('TLabelframe.Label',
-                        background=WIN11_BG, foreground=WIN11_MUTED)
+                        background=WIN11_BG, foreground=WIN11_TEXT,
+                        font=('Segoe UI', 10, 'bold'))
 
         # 输入框 / 列表：白底细边框
         style.configure('TEntry', fieldbackground=WIN11_SURFACE,

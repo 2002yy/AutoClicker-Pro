@@ -5,7 +5,7 @@
 
 # ==================== 应用程序基础配置 ====================
 APP_NAME = "自动点击器 Pro"
-APP_VERSION = "2.5.0"
+APP_VERSION = "2.5.1"
 APP_WIDTH = 560
 APP_HEIGHT = 700
 APP_MIN_WIDTH = 500
@@ -87,6 +87,8 @@ VALIDATION_RULES = {
 PADDING_STANDARD = 10
 PADDING_LARGE = 20
 PADDING_SMALL = 5
+PADDING_WINDOW = 16     # 窗口四周呼吸边距
+PADDING_SECTION = 12    # 区块之间的垂直间距
 GRID_STICKY_ALL = "nsew"
 GRID_STICKY_W = "w"
 GRID_STICKY_E = "e"

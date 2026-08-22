@@ -73,13 +73,29 @@ def _is_uniform(mem_dc, w: int, h: int) -> bool:
     return all(g32.GetPixel(mem_dc, x, y) == first for x, y in pts[1:])
 
 
-def _capture_window(hwnd: int):
-    """抓取窗口内容，返回 (png_bytes, (w, h))"""
+def _visible_bounds(hwnd: int):
+    """DWM 扩展边界（真实可见区域），剔除隐形缩放边框的桌面透底"""
     from ctypes import wintypes
 
-    rect = wintypes.RECT()
-    u32.GetWindowRect(hwnd, ctypes.byref(rect))
-    w, h = rect.right - rect.left, rect.bottom - rect.top
+    class RECT_(ctypes.Structure):
+        _fields_ = [("left", ctypes.c_long), ("top", ctypes.c_long),
+                    ("right", ctypes.c_long), ("bottom", ctypes.c_long)]
+
+    bounds = RECT_()
+    DWMWA_EXTENDED_FRAME_BOUNDS = 9
+    ctypes.windll.dwmapi.DwmGetWindowAttribute(
+        hwnd, DWMWA_EXTENDED_FRAME_BOUNDS, ctypes.byref(bounds),
+        ctypes.sizeof(bounds))
+    return bounds
+
+
+def _capture_window(hwnd: int):
+    """按 DWM 可见边界从屏幕 DC 抓取窗口，返回 (png_bytes, (w, h))"""
+    from ctypes import wintypes
+
+    rect = _visible_bounds(hwnd)
+    w = rect.right - rect.left
+    h = rect.bottom - rect.top
 
     hwnd_dc = u32.GetWindowDC(hwnd)
     mem_dc = g32.CreateCompatibleDC(hwnd_dc)

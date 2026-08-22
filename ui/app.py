@@ -15,6 +15,7 @@ from config.constants import (
     FONT_FAMILY, FONT_SIZE_TITLE, FONT_SIZE_SMALL,
     COLOR_PRIMARY, COLOR_DANGER, COLOR_SUCCESS, COLOR_DISABLED,
     PADDING_STANDARD, PADDING_LARGE, PADDING_SMALL,
+    PADDING_WINDOW, PADDING_SECTION,
     STATUS_READY,
     HOTKEY_START_STOP, HOTKEY_START_RECORDING,
     HOTKEY_STOP_RECORDING, HOTKEY_CANCEL,
@@ -130,8 +131,9 @@ class AutoClickerApp:
     
     def _create_ui(self):
         """创建用户界面"""
-        # 主框架
-        main_frame = ttk.Frame(self.root, padding=PADDING_STANDARD)
+        # 主框架（窗口四周留出呼吸边距）
+        main_frame = ttk.Frame(self.root, padding=(PADDING_WINDOW, PADDING_WINDOW,
+                                                   PADDING_WINDOW, PADDING_SMALL))
         main_frame.grid(row=0, column=0, sticky="nsew")
 
         # 配置网格权重（动作列表所在行才是可伸缩的主体区域）
@@ -145,11 +147,13 @@ class AutoClickerApp:
 
         # 设置面板
         self.settings_panel = SettingsPanel(main_frame)
-        self.settings_panel.grid(row=2, column=0, sticky="ew", pady=(0, PADDING_STANDARD))
+        self.settings_panel.grid(row=2, column=0, sticky="ew",
+                                 pady=(0, PADDING_SECTION))
 
         # 控制按钮
         self.control_buttons = ControlButtons(main_frame)
-        self.control_buttons.grid(row=3, column=0, sticky="ew", pady=(0, PADDING_STANDARD))
+        self.control_buttons.grid(row=3, column=0, sticky="ew",
+                                  pady=(0, PADDING_SECTION))
 
         # 设置按钮回调
         self.control_buttons.set_record_callback(self._on_record_click)
@@ -165,7 +169,7 @@ class AutoClickerApp:
             on_import=self._on_import_click,
         )
         self.library_panel.grid(row=4, column=0, sticky="ew",
-                                pady=(0, PADDING_STANDARD))
+                                pady=(0, PADDING_SECTION))
         self.library_panel.combo.bind(
             '<<ComboboxSelected>>', self._on_library_selection_changed)
         self._refresh_macro_library()
@@ -175,11 +179,12 @@ class AutoClickerApp:
                                               on_apply=self._apply_hotkeys)
         self.hotkey_settings.set_values(self.hotkeys)
         self.hotkey_settings.grid(row=5, column=0, sticky="ew",
-                                  pady=(0, PADDING_STANDARD))
+                                  pady=(0, PADDING_SECTION))
 
         # 动作列表（占据剩余空间）
         self.action_list = ActionList(main_frame)
-        self.action_list.grid(row=6, column=0, sticky="nsew", pady=(0, PADDING_STANDARD))
+        self.action_list.grid(row=6, column=0, sticky="nsew",
+                              pady=(0, PADDING_SECTION))
         self.action_list.set_edit_callbacks(
             on_delete=self._on_delete_action,
             on_move_up=lambda: self._on_move_action(-1),

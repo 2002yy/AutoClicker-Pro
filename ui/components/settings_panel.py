@@ -17,11 +17,11 @@ from config.constants import (
 )
 
 
-class SettingsPanel(ttk.Frame):
-    """设置面板组件，包含所有配置输入框"""
-    
+class SettingsPanel(ttk.LabelFrame):
+    """设置面板组件，包含所有配置输入框（标题框样式，与宏库/快捷键区统一）"""
+
     def __init__(self, parent):
-        super().__init__(parent, padding=PADDING_STANDARD)
+        super().__init__(parent, text="点击参数", padding=PADDING_STANDARD)
         
         # 存储所有变量的字典
         self.variables: Dict[str, tk.StringVar] = {}
