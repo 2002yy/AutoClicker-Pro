@@ -5,11 +5,11 @@
 
 # ==================== 应用程序基础配置 ====================
 APP_NAME = "自动点击器 Pro"
-APP_VERSION = "2.7.0"
+APP_VERSION = "2.7.1"
 APP_WIDTH = 560
 APP_HEIGHT = 760
 APP_MIN_WIDTH = 500
-APP_MIN_HEIGHT = 640
+APP_MIN_HEIGHT = 520   # 高度不足时内容区自动出现滚动条
 
 # ==================== 颜色定义 ====================
 COLOR_PRIMARY = "#4A90E2"

@@ -144,17 +144,42 @@ class AutoClickerApp:
         self.root.protocol("WM_DELETE_WINDOW", self.on_close)
     
     def _create_ui(self):
-        """创建用户界面"""
-        # 主框架（窗口四周留出呼吸边距）
-        main_frame = ttk.Frame(self.root, padding=(PADDING_WINDOW, PADDING_WINDOW,
-                                                   PADDING_WINDOW, PADDING_SMALL))
-        main_frame.grid(row=0, column=0, sticky="nsew")
+        """创建用户界面
 
-        # 配置网格权重（动作列表所在行才是可伸缩的主体区域）
+        布局：外层 = 可滚动内容画布（row0，随窗口伸缩） + 固定状态栏（row1）。
+        窗口过小放不下全部内容时自动出现竖向滚动条（滚轮/拖动均可），
+        内容放得下时动作列表区吃掉全部余量、滚动条隐藏。
+        """
+        # 外层框架
+        outer = ttk.Frame(self.root)
+        outer.grid(row=0, column=0, sticky="nsew")
         self.root.columnconfigure(0, weight=1)
         self.root.rowconfigure(0, weight=1)
+        outer.columnconfigure(0, weight=1)
+        outer.rowconfigure(0, weight=1)
+
+        # 滚动画布 + 竖向滚动条（初始隐藏）
+        self.canvas = tk.Canvas(outer, highlightthickness=0)
+        self.canvas.configure(yscrollincrement=40)
+        self.v_scrollbar = ttk.Scrollbar(outer, orient="vertical",
+                                         command=self.canvas.yview)
+        self.canvas.configure(yscrollcommand=self.v_scrollbar.set)
+        self.canvas.grid(row=0, column=0, sticky="nsew")
+        self.v_scrollbar.grid(row=0, column=1, sticky="ns")
+        self.v_scrollbar.grid_remove()
+
+        # 内容主框架（窗口四周留出呼吸边距）
+        main_frame = ttk.Frame(self.canvas,
+                               padding=(PADDING_WINDOW, PADDING_WINDOW,
+                                        PADDING_WINDOW, PADDING_SMALL))
+        self.main_frame = main_frame
+        self._inner_window = self.canvas.create_window(
+            (0, 0), window=main_frame, anchor="nw", tags=("inner",))
+        # 配置网格权重（动作列表所在行才是可伸缩的主体区域）
         main_frame.columnconfigure(0, weight=1)
         main_frame.rowconfigure(6, weight=1)
+        self.canvas.bind("<Configure>", self._on_canvas_resize)
+        main_frame.bind("<Configure>", self._on_inner_resize)
 
         # 标题 + 快捷键提示
         self._create_title(main_frame)
@@ -228,9 +253,54 @@ class AutoClickerApp:
         )
         self.action_list.on_selection_change = self._on_list_selection_change
 
-        # 状态栏
-        self.status_bar = StatusBar(main_frame)
-        self.status_bar.grid(row=7, column=0, sticky="ew")
+        # 状态栏（固定在底部，不随内容滚动）
+        self.status_bar = StatusBar(outer)
+        self.status_bar.grid(row=1, column=0, columnspan=2, sticky="ew")
+
+        # 滚轮：内容区任意控件上滚动均可滑动（列表框保留原生滚动）
+        self._bind_mouse_wheel()
+
+    # ==================== 滚动支持 ====================
+
+    def _on_canvas_resize(self, event):
+        """画布尺寸变化 -> 内框宽度跟随 + 重算滚动区域"""
+        self.canvas.itemconfigure(self._inner_window, width=event.width)
+        self._sync_scroll_region()
+
+    def _on_inner_resize(self, _event=None):
+        """内容尺寸变化 -> 重算滚动区域与滚动条显隐"""
+        self._sync_scroll_region()
+
+    def _sync_scroll_region(self):
+        """内容放不下 -> 显示滚动条；放得下 -> 内框填满画布（列表区吃余量）"""
+        required = self.main_frame.winfo_reqheight()
+        visible = self.canvas.winfo_height()
+        if visible <= 1:
+            return  # 首次布局前画布尚无尺寸
+        if required > visible:
+            self.v_scrollbar.grid()
+            self.canvas.configure(scrollregion=(0, 0, 0, required))
+            self.canvas.itemconfigure(self._inner_window, height=required)
+        else:
+            self.v_scrollbar.grid_remove()
+            self.canvas.configure(scrollregion=(0, 0, 0, visible))
+            self.canvas.itemconfigure(self._inner_window, height=visible)
+
+    def _bind_mouse_wheel(self):
+        """内容区任意控件上滚轮均滑动画布；列表框跳过（保留原生滚动）"""
+        def on_wheel(event):
+            step = -1 if event.delta > 0 else 1
+            self.canvas.yview_scroll(step, "units")
+            return "break"
+
+        def bind_rec(widget):
+            if isinstance(widget, tk.Listbox):
+                return
+            widget.bind("<MouseWheel>", on_wheel, add="+")
+            for child in widget.winfo_children():
+                bind_rec(child)
+
+        bind_rec(self.main_frame)
 
     def _refresh_macro_library(self):
         """重新列举宏库（含元数据）并刷新下拉框"""
