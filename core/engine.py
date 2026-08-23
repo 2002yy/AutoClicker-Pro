@@ -65,6 +65,8 @@ class ClickerEngine:
         self._mouse_down = False
         self._last_move_point: Optional[tuple] = None
         self._last_move_time = 0.0
+        # 录制期间状态栏光标坐标的节流时间戳
+        self._last_cursor_notify = 0.0
 
         # 配置参数
         self.interval_ms = DEFAULT_INTERVAL_MS
@@ -126,8 +128,8 @@ class ClickerEngine:
     def update_config(self, interval_ms: Optional[int] = None, record_interval: Optional[int] = None,
                      hold_duration: Optional[int] = None, repeat_count: Optional[int] = None,
                      repeat_interval: Optional[int] = None,
-                     start_delay_s: Optional[int] = None,
-                     auto_stop_s: Optional[int] = None):
+                     start_delay_s: Optional[float] = None,
+                     auto_stop_s: Optional[float] = None):
         """更新配置参数"""
         with self._lock:
             if interval_ms is not None:
@@ -237,10 +239,13 @@ class ClickerEngine:
             use_timestamps = any(a.timestamp > 0 for a in sequence)
             self._anchor_warned = set()
 
-            for rep in range(self.repeat_count):
-                if not self.is_running:
+            # repeat_count<=0 表示无限循环，直到手动停止或达到自动停止时限
+            rep = 0
+            while self.is_running:
+                if self.repeat_count > 0 and rep >= self.repeat_count:
                     break
-                if stop_deadline is not None and time.perf_counter() >= stop_deadline:
+                if (stop_deadline is not None
+                        and time.perf_counter() >= stop_deadline):
                     break
 
                 start = time.perf_counter()
@@ -262,8 +267,10 @@ class ClickerEngine:
                         break
                     self._perform_action(action, paired.get(index))
 
-                # 如果不是最后一次重复，则等待重复间隔
-                if rep < self.repeat_count - 1 and self.is_running:
+                # 还有下一轮（或无限模式）时等待重复间隔
+                rep += 1
+                more_rounds = self.repeat_count <= 0 or rep < self.repeat_count
+                if more_rounds and self.is_running:
                     time.sleep(self.repeat_interval / 1000.0)
 
         except Exception as e:
@@ -590,7 +597,18 @@ class ClickerEngine:
         self._append_action(click_action)
 
     def _on_mouse_move(self, x, y):
-        """鼠标移动回调：仅在拖拽（有按键按住）期间按双阈值采样轨迹"""
+        """鼠标移动回调：节流播报光标位置；拖拽期间按双阈值采样轨迹"""
+        now = time.time()
+
+        # 录制期间（无论是否按住）节流显示光标位置，给用户落点反馈
+        if self.is_recording and self.on_status_change:
+            if now - self._last_cursor_notify >= 0.25:
+                self._last_cursor_notify = now
+                try:
+                    self.on_status_change(f"正在录制… 光标 ({x}, {y})")
+                except Exception:
+                    pass
+
         if not self.is_recording or not self._mouse_down:
             return
 

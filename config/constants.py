@@ -5,7 +5,7 @@
 
 # ==================== 应用程序基础配置 ====================
 APP_NAME = "自动点击器 Pro"
-APP_VERSION = "2.5.1"
+APP_VERSION = "2.6.0"
 APP_WIDTH = 560
 APP_HEIGHT = 700
 APP_MIN_WIDTH = 500
@@ -75,7 +75,7 @@ VALIDATION_RULES = {
     'interval_ms': {'min': 1, 'max': 60000, 'required': True},
     'record_interval': {'min': 1, 'max': 10000, 'required': True},
     'hold_duration': {'min': 0, 'max': 5000, 'required': False},
-    'repeat_count': {'min': 1, 'max': 10000, 'required': True},
+    'repeat_count': {'min': 0, 'max': 10000, 'required': True},    # 0=无限循环
     'repeat_interval': {'min': 0, 'max': 3600000, 'required': False},
     'start_delay_s': {'min': 0, 'max': 3600, 'required': True},   # 延迟启动（秒）
     'auto_stop_s': {'min': 0, 'max': 86400, 'required': True},    # 自动停止（秒）

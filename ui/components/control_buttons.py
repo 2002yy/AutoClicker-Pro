@@ -23,6 +23,9 @@ class ControlButtons(ttk.Frame):
         # 按钮状态
         self._is_recording = False
         self._is_clicking = False
+        # 当前生效的快捷键（用于按钮文案标注），由 App 注入
+        self._click_hotkey = ""
+        self._record_hotkey = ""
 
         # 初始化默认回调（会在 set_*_callback 中被覆盖）
         self._on_record_click = lambda: None
@@ -73,33 +76,46 @@ class ControlButtons(ttk.Frame):
         """设置保存按钮回调"""
         self._on_save_click = callback
     
+    def set_hotkey_labels(self, click_key: str, record_key: str):
+        """注入当前生效的快捷键并刷新按钮文案"""
+        self._click_hotkey = (click_key or "").upper()
+        self._record_hotkey = (record_key or "").upper()
+        self.update_clicking_state(self._is_clicking)
+        self.update_recording_state(self._is_recording)
+
     def update_recording_state(self, is_recording: bool):
         """
         更新录制状态
-        
+
         Args:
             is_recording: 是否正在录制
         """
         self._is_recording = is_recording
-        
+
         if is_recording:
             self.record_button.config(text="停止录制", style=STYLE_DANGER)
         else:
-            self.record_button.config(text="开始录制", style="TButton")
-    
+            text = "开始录制"
+            if self._record_hotkey:
+                text = f"开始录制 ({self._record_hotkey})"
+            self.record_button.config(text=text, style="TButton")
+
     def update_clicking_state(self, is_clicking: bool):
         """
         更新点击状态
-        
+
         Args:
             is_clicking: 是否正在点击
         """
         self._is_clicking = is_clicking
-        
+
         if is_clicking:
             self.click_button.config(text="停止点击", style=STYLE_DANGER)
         else:
-            self.click_button.config(text="开始点击", style="Accent.TButton")
+            text = "开始点击"
+            if self._click_hotkey:
+                text = f"开始点击 ({self._click_hotkey})"
+            self.click_button.config(text=text, style="Accent.TButton")
     
     def enable_click_button(self, enabled: bool):
         """

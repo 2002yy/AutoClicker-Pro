@@ -42,6 +42,11 @@ DEFAULT_HOTKEYS = {
     'panic': HOTKEY_CANCEL,
 }
 
+# 设置面板可持久化的字段（与 settings_panel.variables 对应）
+_PANEL_KEYS = ('interval_ms', 'record_interval', 'hold_duration',
+               'repeat_count', 'repeat_interval',
+               'start_delay_s', 'auto_stop_s')
+
 
 def _display_key(key: str) -> str:
     """键名转展示文本（'f8'->'F8'，单字符大写，其余首字母大写）"""
@@ -174,6 +179,14 @@ class AutoClickerApp:
             '<<ComboboxSelected>>', self._on_library_selection_changed)
         self._refresh_macro_library()
 
+        # 恢复上次会话的参数设置（OP 式"记住上次配置"）
+        saved_panel = load_settings().get('panel')
+        if isinstance(saved_panel, dict):
+            restored = {key: saved_panel[key] for key in _PANEL_KEYS
+                        if isinstance(saved_panel.get(key), int)}
+            if restored:
+                self.settings_panel.set_values(restored)
+
         # 全局快捷键自定义区
         self.hotkey_settings = HotkeySettings(main_frame,
                                               on_apply=self._apply_hotkeys)
@@ -276,6 +289,8 @@ class AutoClickerApp:
         self.engine.set_skip_key_names(
             list(self.hotkeys.values()) + [HOTKEY_CANCEL]
         )
+        self.control_buttons.set_hotkey_labels(
+            self.hotkeys['toggle'], self.hotkeys['start_recording'])
 
     def _apply_hotkeys(self, values: dict):
         """应用自定义快捷键：校验 -> 重建监听 -> 更新引擎跳过集与提示 -> 持久化"""
@@ -531,7 +546,7 @@ class AutoClickerApp:
             messagebox.showerror("导入失败", f"无法导入文件：{e}")
     
     def _update_engine_config(self):
-        """更新引擎配置"""
+        """更新引擎配置并持久化面板数值（下次启动自动恢复）"""
         values = self.settings_panel.get_values()
         self.engine.update_config(
             interval_ms=values.get('interval_ms'),
@@ -542,6 +557,17 @@ class AutoClickerApp:
             start_delay_s=values.get('start_delay_s'),
             auto_stop_s=values.get('auto_stop_s')
         )
+        self._save_panel_settings(values)
+
+    def _save_panel_settings(self, values: dict):
+        """把面板数值并入 settings.json（失败静默，不影响运行）"""
+        try:
+            data = load_settings()
+            data['panel'] = {key: values[key] for key in _PANEL_KEYS
+                             if key in values}
+            save_settings(data)
+        except Exception:
+            pass
 
     # ==================== 序列编辑 ====================
 

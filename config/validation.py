@@ -202,7 +202,7 @@ def validate_time_inputs(interval_ms: Any, record_interval: Any,
     if not is_valid:
         return False, error_msg
 
-    # 验证重复次数
+    # 验证重复次数（0 表示无限循环直到手动停止）
     is_valid, error_msg = validate_number(
         repeat_count, "重复次数",
         min_val=VALIDATION_RULES['repeat_count']['min'],

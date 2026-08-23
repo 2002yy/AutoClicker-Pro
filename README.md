@@ -34,7 +34,9 @@ Do not use it to violate software terms of service, bypass anti-cheat systems, a
 - ⌨️ **组合键与拖拽宏** — Ctrl+C / Shift+单击 等修饰键组合录为单条动作并整体还原；拖拽录制移动轨迹（5px/30ms 双阈值采样），回放按原速平滑重演而非瞬移（**已实现**）
 - 🪟 **窗口锚定坐标** — 录制时记录点击所在的前台窗口标题与相对偏移，回放时按同名窗口当前位置重算坐标：窗口挪位/多显示器切换后宏依然点得准。找不到目标窗口时自动降级为绝对坐标并在状态栏提示（**已实现**）
 - 🔐 **加密存储** — 宏文件采用本地 Fernet 对称加密（**已实现**；密钥存于用户目录 `~/.autoclicker_pro/`，属**本地混淆级**保护，并非对抗同机攻击者的机密保护）
-- ⚙️ **灵活配置** — 毫秒级间隔、按住时长、重复次数/间隔设置（**已实现**）
+- 🔁 **循环控制** — 重复次数（**0=无限循环直到手动停止**）与轮次间隔自由设定（**已实现**）
+- 💾 **配置记忆** — 参数与快捷键自动保存，下次启动无需重设（对标 OP Auto Clicker 的"记住上次配置"）
+- 📍 **录制反馈** — 录制时状态栏实时显示光标坐标；控制按钮直接标注当前快捷键
 - 📚 **宏库管理** — 宏按名称保存在 `~/.autoclicker_pro/macros/`，下拉即可加载/删除，支持与任意位置 .enc 文件导出/导入（**已实现**）
 - ⏱️ **延迟启动 / 自动停止** — 开始前倒计时（等待期可随时取消），并可设置整个运行的最长时长，0 为不限（**已实现**）
 - 🔧 **全局快捷键** — F8 启停连点、F10 开始录制、F11 停止录制、ESC 一键全停，窗口失焦时同样生效（**已实现**）
@@ -186,5 +188,7 @@ MIT License — 详见 [LICENSE](LICENSE)
 - [x] Mouse movement trajectory recording (smooth drags)
 - [x] Multi-profile macro management
 - [x] Scheduled auto-click tasks (start delay + auto stop)
+- [ ] Random interval jitter (humanized timing)
+- [ ] Dark theme toggle
 - [ ] Internationalization (i18n)
 

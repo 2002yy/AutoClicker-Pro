@@ -480,5 +480,51 @@ class TestCoordinateEditing(unittest.TestCase):
             app.on_close()
 
 
+class TestPanelPersistence(unittest.TestCase):
+    """面板数值经 settings.json 跨会话持久化"""
+
+    def setUp(self):
+        import shutil as _sh
+        import tempfile
+        from unittest.mock import patch as _patch
+        self._shutil = _sh
+        self.tmp = tempfile.mkdtemp()
+        self._expand_patcher = _patch(
+            'config.macro_library.os.path.expanduser', return_value=self.tmp)
+        self._expand_patcher.start()
+        self.root = _root_or_skip(self)
+        self.app, _ = TestApplyAndEditFlow._make_app(self.root)
+
+    def tearDown(self):
+        try:
+            self.app.on_close()
+        except Exception:
+            pass
+        _teardown_root(self.root)
+        self._expand_patcher.stop()
+        self._shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def test_panel_values_persist_across_sessions(self):
+        """面板数值经 _update_engine_config 写入 settings.json，新实例恢复"""
+        # 修改参数并触发保存
+        self.app.settings_panel.set_values({'interval_ms': 250,
+                                            'repeat_count': 7,
+                                            'auto_stop_s': 90})
+        self.app._update_engine_config()
+        self.assertEqual(self.app.engine.interval_ms, 250)
+
+        # 新实例（同一临时目录）应恢复这些值
+        app2, _ = TestApplyAndEditFlow._make_app(self.root)
+        try:
+            self.assertEqual(app2.settings_panel.get_value('interval_ms'), 250)
+            self.assertEqual(app2.settings_panel.get_value('repeat_count'), 7)
+            self.assertEqual(app2.settings_panel.get_value('auto_stop_s'), 90)
+            # 未保存过的字段保持默认
+            self.assertEqual(app2.settings_panel.get_value('hold_duration'),
+                             100)
+        finally:
+            app2.on_close()
+
+
 if __name__ == "__main__":
     unittest.main()

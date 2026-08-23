@@ -862,5 +862,72 @@ class TestDelayedStartAndAutoStop(unittest.TestCase):
         self.assertEqual(presses, releases)
 
 
+class TestInfiniteRepeat(unittest.TestCase):
+    """repeat_count<=0 表示无限循环，直到手动停止/自动停止"""
+
+    def setUp(self):
+        self.fake_mouse = _FakeMouseController()
+        self.engine = _fresh_engine(self.fake_mouse, MagicMock())
+        self.engine.click_sequence = [
+            ClickAction(1, 1, 'left', 'press', 0.0),
+            ClickAction(1, 1, 'left', 'release', 0.0),
+        ]
+        self.engine.update_config(hold_duration=0, interval_ms=15,
+                                  repeat_interval=0, start_delay_s=0)
+
+    def test_zero_repeat_runs_until_manual_stop(self):
+        self.engine.update_config(repeat_count=0)  # 无限
+        self.assertTrue(self.engine.start_clicking())
+        time.sleep(0.12)
+        presses_midway = self.fake_mouse.ops.count(('press',))
+        self.assertGreaterEqual(presses_midway, 2)   # 已跑多轮
+        self.assertTrue(self.engine.is_running)
+        self.engine.stop_clicking()
+        deadline = time.perf_counter() + 2.0
+        while self.engine.is_running and time.perf_counter() < deadline:
+            time.sleep(0.01)
+        self.assertFalse(self.engine.is_running)
+        # 手动停止后不再增长
+        final = self.fake_mouse.ops.count(('press',))
+        time.sleep(0.08)
+        self.assertEqual(self.fake_mouse.ops.count(('press',)), final)
+
+    def test_cursor_position_reported_during_recording(self):
+        engine = _fresh_engine(MagicMock(), MagicMock())
+        engine.is_recording = True
+        engine.recording_start_time = time.time()
+        messages = []
+        engine.on_status_change = messages.append
+        engine._on_mouse_move(111, 222)
+        self.assertTrue(any('光标' in m and '111' in m for m in messages),
+                        messages)
+        # 节流：紧随其后的移动不再播报
+        before = len(messages)
+        engine._on_mouse_move(333, 444)
+        self.assertEqual(len(messages), before)
+
+
+class TestHotkeyButtonLabels(unittest.TestCase):
+    """控制按钮文案随快捷键注入变化（OP 式"按钮上标热键"）"""
+
+    def test_labels_reflect_hotkeys(self):
+        import tkinter as tk
+        from ui.components.control_buttons import ControlButtons
+        root = tk.Tk(); root.withdraw()
+        try:
+            buttons = ControlButtons(root)
+            buttons.set_hotkey_labels('f8', 'f10')
+            self.assertEqual(buttons.click_button.cget('text'),
+                             '开始点击 (F8)')
+            self.assertEqual(buttons.record_button.cget('text'),
+                             '开始录制 (F10)')
+            buttons.update_clicking_state(True)
+            self.assertEqual(buttons.click_button.cget('text'), '停止点击')
+            buttons.update_clicking_state(False)
+            self.assertIn('F8', buttons.click_button.cget('text'))
+        finally:
+            root.destroy()
+
+
 if __name__ == '__main__':
     unittest.main()

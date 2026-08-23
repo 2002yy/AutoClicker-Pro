@@ -44,7 +44,7 @@ class SettingsPanel(ttk.LabelFrame):
                                str(DEFAULT_HOLD_DURATION))
         
         # 重复次数
-        self._create_input_row(3, "重复次数:", "repeat_count",
+        self._create_input_row(3, "重复次数 (0=不限):", "repeat_count",
                                str(DEFAULT_REPEAT_COUNT))
         
         # 重复间隔
