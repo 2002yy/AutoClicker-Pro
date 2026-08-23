@@ -3,6 +3,7 @@
 纯 UI 层，不包含业务逻辑
 """
 
+import os
 import queue
 import gc
 import tkinter as tk
@@ -19,6 +20,7 @@ from config.constants import (
     STATUS_READY,
     HOTKEY_START_STOP, HOTKEY_START_RECORDING,
     HOTKEY_STOP_RECORDING, HOTKEY_CANCEL,
+    PICK_COORD_COUNTDOWN_S,
 )
 from config import macro_library
 from config.settings_store import load_settings, save_settings
@@ -28,6 +30,7 @@ from core.macros import ClickAction
 from ui.components import SettingsPanel, ActionList, ControlButtons, StatusBar
 from ui.components.hotkey_settings import HotkeySettings, HOTKEY_FIELDS
 from ui.components.macro_library_panel import MacroLibraryPanel
+from ui.components.tutorial_dialog import TutorialDialog, should_show_tutorial
 from ui.theme import apply_win11_theme
 from utils.hotkey_manager import HotkeyManager
 
@@ -112,6 +115,12 @@ class AutoClickerApp:
         self._schedule_after(120, self._refresh_window_bounds)
         self._schedule_after(_UI_POLL_INTERVAL_MS, self._drain_ui_queue)
 
+        # 首次启动自动弹出新手教程（勾选"不再显示"后记忆；
+        # ACPRO_NO_TUTORIAL=1 供测试环境禁用）
+        if (os.environ.get('ACPRO_NO_TUTORIAL') != '1'
+                and should_show_tutorial(load_settings())):
+            self._schedule_after(400, self._show_tutorial)
+
     def _schedule_after(self, ms: int, func: Callable[[], None]):
         """root.after 的受管版本：登记定时器 ID 供 on_close 统一取消；
         触发后自动从集合移除，避免集合随运行时间无限增长"""
@@ -152,6 +161,7 @@ class AutoClickerApp:
 
         # 设置面板
         self.settings_panel = SettingsPanel(main_frame)
+        self.settings_panel.set_pick_handler(self._pick_coordinates)
         self.settings_panel.grid(row=2, column=0, sticky="ew",
                                  pady=(0, PADDING_SECTION))
 
@@ -186,6 +196,17 @@ class AutoClickerApp:
                         if isinstance(saved_panel.get(key), int)}
             if restored:
                 self.settings_panel.set_values(restored)
+            # v2.7 新增：点击类型 / 位置模式 / 固定坐标
+            click_type = saved_panel.get('click_type')
+            if click_type in ('single', 'double', 'triple'):
+                self.settings_panel.set_click_type(click_type)
+            position_mode = saved_panel.get('position_mode')
+            if position_mode in ('cursor', 'fixed'):
+                self.settings_panel.set_position_mode(position_mode)
+            fixed_x = saved_panel.get('fixed_x')
+            fixed_y = saved_panel.get('fixed_y')
+            if isinstance(fixed_x, int) and isinstance(fixed_y, int):
+                self.settings_panel.set_fixed_xy(fixed_x, fixed_y)
 
         # 全局快捷键自定义区
         self.hotkey_settings = HotkeySettings(main_frame,
@@ -245,7 +266,7 @@ class AutoClickerApp:
         return " | ".join(parts)
     
     def _create_title(self, parent):
-        """创建标题与快捷键提示"""
+        """创建标题与快捷键提示（附新手教程入口）"""
         title_label = ttk.Label(
             parent,
             text=f"{APP_NAME}",
@@ -253,14 +274,62 @@ class AutoClickerApp:
             foreground=COLOR_PRIMARY
         )
         title_label.grid(row=0, column=0, pady=(0, PADDING_SMALL))
-        
+
+        hint_frame = ttk.Frame(parent)
+        hint_frame.grid(row=1, column=0, pady=(0, PADDING_LARGE))
         self.hotkey_hint_label = ttk.Label(
-            parent,
+            hint_frame,
             text=self._hotkey_hint_text(),
             font=(FONT_FAMILY, FONT_SIZE_SMALL),
             foreground=COLOR_DISABLED
         )
-        self.hotkey_hint_label.grid(row=1, column=0, pady=(0, PADDING_LARGE))
+        self.hotkey_hint_label.grid(row=0, column=0)
+        ttk.Label(hint_frame, text="  |  ",
+                  font=(FONT_FAMILY, FONT_SIZE_SMALL),
+                  foreground=COLOR_DISABLED).grid(row=0, column=1)
+        tutorial_link = ttk.Label(
+            hint_frame, text="新手教程",
+            font=(FONT_FAMILY, FONT_SIZE_SMALL),
+            foreground=COLOR_PRIMARY, cursor="hand2")
+        tutorial_link.grid(row=0, column=2)
+        tutorial_link.bind('<Button-1>', lambda _e: self._show_tutorial())
+
+    # ==================== 新手教程 ====================
+
+    def _show_tutorial(self):
+        """打开新手教程对话框；勾选'不再显示'时记忆到 settings.json"""
+        TutorialDialog(self.root, on_dont_show=self._mark_tutorial_seen)
+
+    def _mark_tutorial_seen(self):
+        """记录 tutorial_seen，之后启动不再自动弹出"""
+        try:
+            data = load_settings()
+            data['tutorial_seen'] = True
+            save_settings(data)
+        except Exception:
+            pass
+
+    def _pick_coordinates(self):
+        """拾取坐标：倒计时后抓取当前光标位置填入面板"""
+        if self.engine.is_recording or self.engine.is_running:
+            return
+
+        def _tick(remaining: int):
+            if remaining > 0:
+                self.status_bar.set_status(
+                    f"拾取坐标：{remaining} 秒内把鼠标移到目标位置...")
+                self._schedule_after(1000, lambda: _tick(remaining - 1))
+                return
+            try:
+                x, y = self.engine.mouse_controller.position
+            except Exception:
+                return
+            x, y = int(x), int(y)
+            self.settings_panel.set_fixed_xy(x, y)
+            self.settings_panel.set_position_mode('fixed')
+            self.status_bar.set_success(f"已拾取坐标 ({x}, {y})")
+
+        _tick(PICK_COORD_COUNTDOWN_S)
     
     # ==================== 快捷键 ====================
     
@@ -437,11 +506,23 @@ class AutoClickerApp:
             
             # 检查是否有动作序列
             if len(self._current_actions) == 0:
-                messagebox.showwarning("警告", "请先录制或加载一个宏序列")
+                # 内置连点模式：无需录制，按面板设置直接连点
+                # （对标商业连点器：设好间隔 -> F8 -> 原地/定点连点）
+                self._update_engine_config()
+                if self.settings_panel.get_position_mode() == 'fixed':
+                    xy = self.settings_panel.get_fixed_xy()
+                    self.engine.set_fixed_position(xy)
+                else:
+                    self.engine.set_fixed_position(None)
+                success = self.engine.start_simple_clicking()
+                if success:
+                    self.status_bar.set_clicking()
                 return
-            
+
             # 更新引擎配置
             self._update_engine_config()
+            # 序列回放使用动作自带坐标，不套用内置连点的固定位置
+            self.engine.set_fixed_position(None)
 
             # 传递动作序列到引擎
             self.engine.click_sequence = self._current_actions
@@ -555,7 +636,8 @@ class AutoClickerApp:
             repeat_count=values.get('repeat_count'),
             repeat_interval=values.get('repeat_interval'),
             start_delay_s=values.get('start_delay_s'),
-            auto_stop_s=values.get('auto_stop_s')
+            auto_stop_s=values.get('auto_stop_s'),
+            click_type=self.settings_panel.get_click_type()
         )
         self._save_panel_settings(values)
 
@@ -563,8 +645,15 @@ class AutoClickerApp:
         """把面板数值并入 settings.json（失败静默，不影响运行）"""
         try:
             data = load_settings()
-            data['panel'] = {key: values[key] for key in _PANEL_KEYS
-                             if key in values}
+            panel = {key: values[key] for key in _PANEL_KEYS
+                     if key in values}
+            # v2.7 新增字段的持久化
+            panel['click_type'] = self.settings_panel.get_click_type()
+            panel['position_mode'] = self.settings_panel.get_position_mode()
+            fixed_xy = self.settings_panel.get_fixed_xy()
+            if fixed_xy is not None:
+                panel['fixed_x'], panel['fixed_y'] = fixed_xy
+            data['panel'] = panel
             save_settings(data)
         except Exception:
             pass

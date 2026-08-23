@@ -86,6 +86,83 @@ class TestClickerEngineClicking(unittest.TestCase):
         self.assertFalse(self.engine.is_running)
 
 
+class TestSimpleClicking(unittest.TestCase):
+    """内置连点模式：无需录制序列，直接按配置连点（对标商业连点器）"""
+
+    def setUp(self):
+        self.mouse_mock = MagicMock()
+        self.mouse_mock.position = (0, 0)
+        self.engine = _fresh_engine(self.mouse_mock, MagicMock())
+        # 最快节奏跑完循环，避免拖慢测试
+        self.engine.update_config(interval_ms=1, hold_duration=0)
+
+    def _run_and_wait(self, timeout=2.0):
+        self.assertTrue(self.engine.start_simple_clicking())
+        deadline = time.time() + timeout
+        while self.engine.is_running and time.time() < deadline:
+            time.sleep(0.01)
+        self.assertFalse(self.engine.is_running, "内置连点未在限时内结束")
+
+    def test_fixed_position_clicks_there(self):
+        self.engine.set_fixed_position((123, 456))
+        self.engine.update_config(repeat_count=3)
+        self._run_and_wait()
+        self.assertEqual(self.mouse_mock.press.call_count, 3)
+        self.assertEqual(self.mouse_mock.release.call_count, 3)
+        # 每次点击前都移动到固定位置
+        self.assertEqual(self.mouse_mock.position, (123, 456))
+
+    def test_follow_cursor_does_not_move_mouse(self):
+        # fixed_position=None：跟随光标，不写 position
+        self.engine.update_config(repeat_count=2)
+        self._run_and_wait()
+        self.assertEqual(self.mouse_mock.press.call_count, 2)
+        self.assertEqual(self.mouse_mock.position, (0, 0))  # 原地未动
+
+    def test_double_click_type_presses_twice_per_event(self):
+        self.engine.set_fixed_position((5, 5))
+        self.engine.update_config(click_type='double', repeat_count=1)
+        self._run_and_wait()
+        self.assertEqual(self.mouse_mock.press.call_count, 2)
+        self.assertEqual(self.mouse_mock.release.call_count, 2)
+
+    def test_triple_click_type_presses_three_times(self):
+        self.engine.update_config(click_type='triple', repeat_count=1,
+                                  interval_ms=1)
+        self._run_and_wait()
+        self.assertEqual(self.mouse_mock.press.call_count, 3)
+
+    def test_infinite_until_stopped(self):
+        self.engine.set_fixed_position((7, 7))
+        self.engine.update_config(repeat_count=0, interval_ms=1)
+        self.assertTrue(self.engine.start_simple_clicking())
+        deadline = time.time() + 2.0
+        while self.mouse_mock.press.call_count < 5 and time.time() < deadline:
+            time.sleep(0.005)
+        self.assertGreaterEqual(self.mouse_mock.press.call_count, 5)
+        self.engine.stop_clicking()
+        time.sleep(0.05)
+        self.assertFalse(self.engine.is_running)
+
+    def test_start_simple_idempotent_while_running(self):
+        self.engine.update_config(repeat_count=0, interval_ms=50)
+        self.assertTrue(self.engine.start_simple_clicking())
+        try:
+            self.assertFalse(self.engine.start_simple_clicking())
+        finally:
+            self.engine.stop_clicking()
+            time.sleep(0.05)
+
+    def test_invalid_click_type_ignored(self):
+        self.engine.update_config(click_type='quadruple')
+        self.assertEqual(self.engine.click_type, 'single')
+
+    def test_set_fixed_position_none_follows_cursor(self):
+        self.engine.set_fixed_position((9, 9))
+        self.engine.set_fixed_position(None)
+        self.assertIsNone(self.engine.fixed_position)
+
+
 class TestClickerEngineRecordingFilter(unittest.TestCase):
     """录制过滤钩子：落在本程序窗口内的点击不应入序列"""
 

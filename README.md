@@ -29,6 +29,9 @@ Do not use it to violate software terms of service, bypass anti-cheat systems, a
 > ⚠️ 以下为**已实现**功能；"规划中"为尚未实现、此前文档曾误述为已实现的部分。
 
 - 🖱️ **鼠标连点** — 支持左键/右键/中键，固定坐标，按配置间隔自动点击（**已实现**）
+- ⚡ **内置连点模式** — **无需先录制**：设好间隔与重复次数，按 F8 即在光标当前位置连点（对标 OP Auto Clicker 核心用法）；也可选固定位置定点连点（**已实现**）
+- 🎯 **点击类型与拾取坐标** — 单击/双击/三击可选；"拾取坐标"倒计时 3 秒抓取光标位置自动填入 X/Y（**已实现**）
+- 📖 **新手教程** — 首次启动自动弹出快速上手（可勾选不再显示），标题栏"新手教程"链接随时重看（**已实现**）
 - 🔴 **宏录制（鼠标 + 键盘）** — 录制鼠标点击与键盘按键序列，回放按录制时的真实节奏执行（时间戳原速回放），支持指定次数重复（**已实现**；录制时落在本程序窗口内的点击自动忽略）
 - ⌨️ **键盘连点 / 录制** — 录制键盘按键并在回放时自动按下释放（**已实现**）
 - ⌨️ **组合键与拖拽宏** — Ctrl+C / Shift+单击 等修饰键组合录为单条动作并整体还原；拖拽录制移动轨迹（5px/30ms 双阈值采样），回放按原速平滑重演而非瞬移（**已实现**）
@@ -188,6 +191,7 @@ MIT License — 详见 [LICENSE](LICENSE)
 - [x] Mouse movement trajectory recording (smooth drags)
 - [x] Multi-profile macro management
 - [x] Scheduled auto-click tasks (start delay + auto stop)
+- [x] Built-in simple clicking (no recording required) + click type + coordinate picker + first-run tutorial
 - [ ] Random interval jitter (humanized timing)
 - [ ] Dark theme toggle
 - [ ] Internationalization (i18n)

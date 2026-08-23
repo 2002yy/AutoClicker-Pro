@@ -5,11 +5,11 @@
 
 # ==================== 应用程序基础配置 ====================
 APP_NAME = "自动点击器 Pro"
-APP_VERSION = "2.6.0"
+APP_VERSION = "2.7.0"
 APP_WIDTH = 560
-APP_HEIGHT = 700
+APP_HEIGHT = 760
 APP_MIN_WIDTH = 500
-APP_MIN_HEIGHT = 600
+APP_MIN_HEIGHT = 640
 
 # ==================== 颜色定义 ====================
 COLOR_PRIMARY = "#4A90E2"
@@ -40,6 +40,18 @@ DEFAULT_REPEAT_COUNT = 1
 DEFAULT_REPEAT_INTERVAL = 1000
 DEFAULT_START_DELAY_S = 0     # 延迟启动（秒），0 = 立即开始
 DEFAULT_AUTO_STOP_S = 0       # 自动停止（秒），0 = 不限时
+
+# ==================== 内置连点模式（无需录制，对标商业连点器） ====================
+# 点击类型：单击 / 双击 / 三击
+CLICK_TYPE_CHOICES = ('单击', '双击', '三击')
+CLICK_TYPE_CODES = {'单击': 'single', '双击': 'double', '三击': 'triple'}
+DEFAULT_CLICK_TYPE_LABEL = '单击'
+MULTI_CLICK_GAP_MS = 80       # 同一次双击/三击内部两次按键的间隔
+
+# 点击位置模式：跟随光标（在哪点哪）/ 固定位置
+POSITION_MODE_CHOICES = ('跟随光标', '固定位置')
+DEFAULT_POSITION_MODE_LABEL = '跟随光标'
+PICK_COORD_COUNTDOWN_S = 3    # 拾取坐标倒计时秒数
 
 # ==================== 时间单位换算 ====================
 MS_PER_SECOND = 1000

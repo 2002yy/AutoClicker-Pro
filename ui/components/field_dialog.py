@@ -7,7 +7,7 @@
 
 import tkinter as tk
 from tkinter import ttk
-from typing import Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 
 class FieldDialog(tk.Toplevel):
@@ -21,7 +21,7 @@ class FieldDialog(tk.Toplevel):
     """
 
     def __init__(self, parent, title: str,
-                 fields: List[Tuple[str, str]],
+                 fields: List[Tuple[str, Any]],
                  validators: Optional[list] = None):
         super().__init__(parent)
         self.title(title)

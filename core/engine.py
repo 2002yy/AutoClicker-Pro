@@ -17,7 +17,8 @@ from config.constants import (
     HOTKEY_START_STOP, HOTKEY_START_RECORDING,
     HOTKEY_STOP_RECORDING, HOTKEY_CANCEL,
     STATUS_RECORDING,
-    MOVE_MIN_DISTANCE_PX, MOVE_MIN_INTERVAL_MS
+    MOVE_MIN_DISTANCE_PX, MOVE_MIN_INTERVAL_MS,
+    MULTI_CLICK_GAP_MS
 )
 from config.encryption import encrypt_macro, decrypt_macro
 from config.validation import (
@@ -77,6 +78,10 @@ class ClickerEngine:
         self.start_delay_s = DEFAULT_START_DELAY_S   # 延迟启动（秒）
         self.auto_stop_s = DEFAULT_AUTO_STOP_S       # 自动停止（秒，0=不限时）
 
+        # 内置连点模式（无序列直接开始时生效，对标商业连点器）
+        self.click_type = 'single'                   # single / double / triple
+        self.fixed_position: Optional[Tuple[int, int]] = None  # None=跟随光标
+
         # 回调函数
         self.on_status_change: Optional[Callable[[str], None]] = None
         self.on_recording_update: Optional[Callable[[List[ClickAction]], None]] = None
@@ -129,7 +134,8 @@ class ClickerEngine:
                      hold_duration: Optional[int] = None, repeat_count: Optional[int] = None,
                      repeat_interval: Optional[int] = None,
                      start_delay_s: Optional[float] = None,
-                     auto_stop_s: Optional[float] = None):
+                     auto_stop_s: Optional[float] = None,
+                     click_type: Optional[str] = None):
         """更新配置参数"""
         with self._lock:
             if interval_ms is not None:
@@ -146,6 +152,13 @@ class ClickerEngine:
                 self.start_delay_s = start_delay_s
             if auto_stop_s is not None:
                 self.auto_stop_s = auto_stop_s
+            if click_type in ('single', 'double', 'triple'):
+                self.click_type = click_type
+
+    def set_fixed_position(self, xy: Optional[Tuple[int, int]]):
+        """设置内置连点模式的固定坐标；None 表示跟随光标"""
+        with self._lock:
+            self.fixed_position = xy
 
     # ==================== 回调设置 ====================
 
@@ -217,6 +230,76 @@ class ClickerEngine:
                 return True
             time.sleep(min(0.1, remaining))
         return False
+
+    def start_simple_clicking(self) -> bool:
+        """开始内置连点（无需录制序列，对标商业连点器的核心用法）
+
+        按 click_type（单击/双击/三击）在 fixed_position（固定位置）
+        或当前光标处连续点击；repeat_count 为点击事件总数，<=0 表示无限。
+        """
+        if self.is_running:
+            return False
+
+        self.is_running = True
+
+        self._emit_event(EngineEvent.CLICKING_STARTED)
+        if self.on_status_change:
+            self.on_status_change("正在点击...")
+
+        click_thread = threading.Thread(target=self._execute_simple_clicking)
+        click_thread.daemon = True
+        click_thread.start()
+
+        return True
+
+    def _execute_simple_clicking(self):
+        """内置连点主循环（在工作线程中运行）"""
+        clicks_per_event = {'single': 1, 'double': 2, 'triple': 3}.get(
+            self.click_type, 1)
+        gap_s = MULTI_CLICK_GAP_MS / 1000.0
+        try:
+            if not self._wait_start_delay():
+                return
+
+            stop_deadline: Optional[float] = None
+            if self.auto_stop_s > 0:
+                stop_deadline = time.perf_counter() + self.auto_stop_s
+
+            btn = mouse.Button.left
+            events_done = 0
+            infinite = self.repeat_count <= 0
+            while self.is_running:
+                if not infinite and events_done >= self.repeat_count:
+                    break
+                if (stop_deadline is not None
+                        and time.perf_counter() >= stop_deadline):
+                    break
+
+                for i in range(clicks_per_event):
+                    if not self.is_running:
+                        break
+                    if (stop_deadline is not None
+                            and time.perf_counter() >= stop_deadline):
+                        break
+                    target = self.fixed_position
+                    if target is not None:
+                        self.mouse_controller.position = target
+                    self.mouse_controller.press(btn)
+                    self.mouse_controller.release(btn)
+                    if i < clicks_per_event - 1:
+                        time.sleep(gap_s)
+
+                events_done += 1
+                # 还有下一轮（或无限模式）时等待点击间隔
+                more = infinite or events_done < self.repeat_count
+                if more and self.is_running:
+                    time.sleep(max(self.interval_ms, 1) / 1000.0)
+
+        except Exception as e:
+            print(f"连点执行错误：{e}")
+
+        finally:
+            self.stop_clicking()
 
     def _execute_clicking(self):
         """执行点击操作的核心方法（在工作线程中运行）

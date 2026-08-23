@@ -7,11 +7,16 @@ GUI 冒烟测试
 """
 
 import gc
+import os
 import sys
 import unittest
 from pathlib import Path
+from typing import cast
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
+
+# GUI 测试中禁用首启教程自动弹窗（个别用例直接调 _show_tutorial 验证）
+os.environ.setdefault('ACPRO_NO_TUTORIAL', '1')
 
 import tkinter as tk
 
@@ -468,13 +473,13 @@ class TestCoordinateEditing(unittest.TestCase):
                               return_value=(777, 888)):
                 app.action_list.select_index(0)
                 app._on_edit_coords()
-            action = app.engine.get_action(0)
+            action = cast(ClickAction, app.engine.get_action(0))
             self.assertEqual((action.x, action.y), (777, 888))
 
             # 取消（返回 None）不改动
             with patch.object(app, '_show_coord_dialog', return_value=None):
                 app._on_edit_coords()
-            action = app.engine.get_action(0)
+            action = cast(ClickAction, app.engine.get_action(0))
             self.assertEqual((action.x, action.y), (777, 888))
         finally:
             app.on_close()
@@ -524,6 +529,158 @@ class TestPanelPersistence(unittest.TestCase):
                              100)
         finally:
             app2.on_close()
+
+    def test_click_type_and_position_persist_across_sessions(self):
+        """v2.7 新增字段（点击类型/位置模式/固定坐标）同样跨会话恢复"""
+        self.app.settings_panel.set_click_type('double')
+        self.app.settings_panel.set_fixed_xy(320, 240)
+        self.app.settings_panel.set_position_mode('fixed')
+        self.app._update_engine_config()
+
+        app2, _ = TestApplyAndEditFlow._make_app(self.root)
+        try:
+            # UI 层恢复
+            self.assertEqual(app2.settings_panel.get_click_type(), 'double')
+            self.assertEqual(app2.settings_panel.get_position_mode(), 'fixed')
+            self.assertEqual(app2.settings_panel.get_fixed_xy(), (320, 240))
+            # 引擎在应用配置后生效
+            self.assertEqual(app2.engine.click_type, 'single')  # 初始默认
+            app2.engine.start_simple_clicking = lambda *a, **k: True
+            app2._on_click_click()
+            self.assertEqual(app2.engine.click_type, 'double')
+            self.assertEqual(app2.engine.fixed_position, (320, 240))
+            app2.engine.stop_clicking()
+        finally:
+            app2.on_close()
+
+
+class TestSimpleStartFlow(unittest.TestCase):
+    """空序列时"开始点击"走内置连点模式，不再弹窗要求先录制"""
+
+    def setUp(self):
+        import shutil as _sh
+        import tempfile
+        from unittest.mock import patch as _patch
+        self._shutil = _sh
+        self.tmp = tempfile.mkdtemp()
+        self._expand_patcher = _patch(
+            'config.macro_library.os.path.expanduser', return_value=self.tmp)
+        self._expand_patcher.start()
+        self.root = _root_or_skip(self)
+
+    def tearDown(self):
+        _teardown_root(self.root)
+        self._expand_patcher.stop()
+        self._shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def test_empty_sequence_starts_simple_clicking(self):
+        from unittest.mock import patch as _patch
+        app, _ = TestApplyAndEditFlow._make_app(self.root)
+        try:
+            self.assertEqual(len(app._current_actions), 0)
+            simple_calls, fixed_calls = [], []
+            app.engine.start_simple_clicking = (
+                lambda *a, **k: simple_calls.append(True) or True)
+            app.engine.set_fixed_position = (
+                lambda xy=None: fixed_calls.append(xy))
+            with _patch('ui.app.messagebox') as mb:
+                # 跟随光标模式（显式重置，避免环境残留）
+                app.settings_panel.set_position_mode('cursor')
+                app._on_click_click()
+                mb.showwarning.assert_not_called()  # 不再提示"请先录制"
+                self.assertEqual(len(simple_calls), 1)
+                self.assertEqual(fixed_calls[-1], None)
+                # 固定位置模式 -> 坐标透传引擎
+                app.settings_panel.set_fixed_xy(11, 22)
+                app.settings_panel.set_position_mode('fixed')
+                app._on_click_click()
+                self.assertEqual(len(simple_calls), 2)
+                self.assertEqual(fixed_calls[-1], (11, 22))
+        finally:
+            if app.engine.is_running:
+                app.engine.stop_clicking()
+            app.on_close()
+
+    def test_sequence_playback_clears_fixed_position(self):
+        """有序列时按原路径回放，且不套用内置连点的固定位置"""
+        from core.macros import ClickAction as _CA
+        app, _ = TestApplyAndEditFlow._make_app(self.root)
+        try:
+            action = _CA(50, 60, 'left', 'press', 0.0)
+            app.engine.click_sequence = [action]
+            app._refresh_actions_ui()
+            start_calls = []
+            fixed_calls = []
+            app.engine.start_clicking = (
+                lambda *a, **k: start_calls.append(True) or True)
+            app.engine.start_simple_clicking = (
+                lambda *a, **k: fixed_calls.append('simple') or True)
+            app.engine.set_fixed_position = (
+                lambda xy=None: fixed_calls.append(xy))
+            app.settings_panel.set_position_mode('cursor')
+            app._on_click_click()
+            self.assertEqual(len(start_calls), 1)
+            self.assertNotIn('simple', fixed_calls)  # 未走内置连点
+            self.assertIsNone(fixed_calls[-1])       # 定位被清除
+        finally:
+            if app.engine.is_running:
+                app.engine.stop_clicking()
+            app.on_close()
+
+
+class TestTutorialFirstRun(unittest.TestCase):
+    """新手教程：首启弹出逻辑与勾选记忆"""
+
+    def setUp(self):
+        self.root = _root_or_skip(self)
+
+    def tearDown(self):
+        _teardown_root(self.root)
+
+    def test_should_show_when_fresh(self):
+        from ui.components.tutorial_dialog import should_show_tutorial
+        self.assertTrue(should_show_tutorial({}))
+        self.assertTrue(should_show_tutorial(None))
+
+    def test_should_not_show_when_seen(self):
+        from ui.components.tutorial_dialog import should_show_tutorial
+        self.assertFalse(should_show_tutorial({'tutorial_seen': True}))
+        self.assertTrue(should_show_tutorial({'tutorial_seen': False}))
+
+    def test_dialog_opens_and_marks_seen(self):
+        import shutil as _sh
+        import tempfile
+        from unittest.mock import patch as _patch
+        from ui.components import tutorial_dialog as td_mod
+
+        tmp = tempfile.mkdtemp()
+        expand = _patch('config.macro_library.os.path.expanduser',
+                        return_value=tmp)
+        expand.start()
+        try:
+            app, _ = TestApplyAndEditFlow._make_app(self.root)
+            try:
+                created = {}
+
+                class SpyDialog(td_mod.TutorialDialog):
+                    def __init__(s, master, **kw):
+                        super().__init__(master, **kw)
+                        created['dlg'] = s
+
+                with _patch('ui.app.TutorialDialog', SpyDialog):
+                    app._show_tutorial()
+                dialog = created['dlg']
+                dialog.dont_show_var.set(True)
+                dialog._close()
+                from config.settings_store import load_settings
+                self.assertTrue(load_settings().get('tutorial_seen'))
+            finally:
+                if app.engine.is_running:
+                    app.engine.stop_clicking()
+                app.on_close()
+        finally:
+            expand.stop()
+            _sh.rmtree(tmp, ignore_errors=True)
 
 
 if __name__ == "__main__":

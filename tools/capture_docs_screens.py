@@ -12,6 +12,7 @@
 """
 
 import ctypes
+import os
 import shutil
 import sys
 import tempfile
@@ -22,6 +23,9 @@ from pathlib import Path
 from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).parent.parent.resolve()))
+
+# 截图脚本内禁用首启教程自动弹出（教程单独截一张）
+os.environ["ACPRO_NO_TUTORIAL"] = "1"
 
 OUT_DIR = Path(__file__).parent.parent / "docs" / "screenshots"
 
@@ -182,7 +186,7 @@ def _build_demo_app():
     app = AutoClickerApp(root)
     # 必须在 App 创建之后再设尺寸：_configure_window 会重置为 APP_WIDTH；
     # 加宽以保证宏库行（下拉框 + 四个按钮）完整展示
-    root.geometry("760x1180+80+20")
+    root.geometry("800x1340+80+10")
 
     # 演示动作序列：锚定点击 -> 拖拽轨迹 -> Ctrl+C -> Enter
     title = "记事本.txt - 记事本"
@@ -241,6 +245,19 @@ def main():
         app.status_bar.set_recording()
         app.control_buttons.update_recording_state(True)
         shot("record-replay.png")
+
+        # 截图三：新手教程弹窗（首启体验展示）
+        from ui.components.tutorial_dialog import TutorialDialog
+        dlg = TutorialDialog(root)
+        root.update()
+        time.sleep(0.25)
+        root.update()
+        hwnd = u32.GetParent(dlg.winfo_id()) or dlg.winfo_id()
+        png, size = _capture_window(hwnd)
+        out = OUT_DIR / "tutorial.png"
+        out.write_bytes(png)
+        print(f"{out} ({size[0]}x{size[1]}, {len(png)} bytes)")
+        dlg.destroy()
     finally:
         _keep_awake(False)
         try:
