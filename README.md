@@ -111,22 +111,28 @@ python pack.py
 
 ```
 ├── main.py              # 程序入口
-├── config/              # 配置模块
-│   ├── constants.py     # 常量定义
-│   ├── encryption.py    # 加密功能
-│   └── validation.py    # 输入验证
-├── core/                # 核心业务逻辑
-│   ├── engine.py        # 主引擎（连点 / 录制 / 存取宏）
-│   └── macros.py        # ClickAction 数据模型
-├── ui/                  # UI 层
-│   ├── app.py           # 主应用窗口
-│   └── components/      # UI 子组件
-├── utils/               # 工具类
-│   └── hotkey_manager.py  # 全局快捷键管理器
+├── config/              # 配置模块（常量 / 加密 / 宏库 / 设置持久化 / 输入验证）
+├── core/                # 核心业务逻辑（engine 连点·录制·回放 / macros 数据模型）
+├── ui/                  # UI 层（app 主窗口 / theme 主题 / components 子组件）
+├── utils/               # 工具类（全局快捷键 / Win32 窗口锚定）
+├── tools/               # 开发辅助脚本（文档截图生成）
 ├── tests/               # 单元测试
-├── docs/                # 文档
+├── docs/                # 文档（教程 / 发布指南 / 项目结构 / 历史审计存档）
 └── .github/workflows/   # CI/CD 自动构建
 ```
+
+详细说明见 [docs/PROJECT_STRUCTURE.md](docs/PROJECT_STRUCTURE.md)。
+
+### 文档索引
+
+| 文档 | 内容 |
+|---|---|
+| [新手教程](docs/TUTORIAL.md) | 用户快速上手图文教程 |
+| [发布指南](docs/PUBLISHING.md) | CI/CD 发版流程、本地打包、签名与误报处理 |
+| [项目结构](docs/PROJECT_STRUCTURE.md) | 目录树与架构设计说明 |
+| [隐私政策](PRIVACY.md) | 无网络、无遥测声明 |
+| [安全说明](SECURITY.md) | 安全模型与已知限制 |
+| [历史审计存档](docs/archive/AUDIT_REPORT.md) | v2.0.0 时期审计报告及修复记录 |
 
 ---
 

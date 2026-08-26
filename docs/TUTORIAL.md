@@ -112,7 +112,7 @@
 
 1. 校验下载包 SHA256 与 Release 页公布的值一致后，添加信任/放行
 2. 不放心可直接源码运行：`pip install -r requirements.txt && python main.py`
-3. 向杀软厂商申诉白名单（详见 [PUBLISHING.md](../PUBLISHING.md) 签名章节）
+3. 向杀软厂商申诉白名单（详见 [PUBLISHING.md](PUBLISHING.md) 签名章节）
 
 本程序**无网络通信、无遥测**，可自行审计源码验证。
 </details>
