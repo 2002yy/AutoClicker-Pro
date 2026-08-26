@@ -22,7 +22,7 @@ from config.constants import (
 )
 from config.encryption import encrypt_macro, decrypt_macro
 from config.validation import (
-    validate_time_inputs, validate_macro_sequence, is_modifier_name
+    validate_macro_sequence, is_modifier_name
 )
 from core.macros import ClickAction
 from utils import win_windows

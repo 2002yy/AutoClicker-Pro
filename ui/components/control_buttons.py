@@ -5,10 +5,9 @@
 
 import tkinter as tk
 from tkinter import ttk
-from typing import Optional, Callable
+from typing import Callable
 
 from config.constants import (
-    FONT_FAMILY, FONT_SIZE_NORMAL,
     PADDING_STANDARD, PADDING_SMALL,
     STYLE_DANGER
 )

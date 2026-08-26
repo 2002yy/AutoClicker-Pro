@@ -9,7 +9,7 @@ import tkinter as tk
 from tkinter import ttk
 from typing import Callable, Optional
 
-from config.constants import (FONT_FAMILY, FONT_SIZE_NORMAL, FONT_SIZE_SMALL,
+from config.constants import (FONT_FAMILY, FONT_SIZE_SMALL,
                               PADDING_SMALL, PADDING_STANDARD)
 
 
