@@ -13,11 +13,12 @@ from config.constants import (
 )
 
 # 动作标识 -> 显示名（顺序即界面顺序）
+# 标题栏热键提示会复用这里的 label，挑两字短词以保证标题区不溢出
 HOTKEY_FIELDS = [
-    ('toggle', '启停连点'),
-    ('start_recording', '开始录制'),
-    ('stop_recording', '停止录制'),
-    ('panic', '全部停止'),
+    ('toggle', '启停'),
+    ('start_recording', '录制'),
+    ('stop_recording', '停录'),
+    ('panic', '急停'),
 ]
 
 

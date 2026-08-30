@@ -103,16 +103,21 @@ class AutoClickerApp:
 
         # 创建界面
         self._create_ui()
-        
+
         # 绑定窗口内快捷键 + 全局快捷键
         self._bind_hotkeys()
         self.hotkey_manager: Optional[HotkeyManager] = None
         self._setup_global_hotkeys()
-        
+
         # 跟踪窗口位置变化 + 启动 UI 队列轮询
         self.root.bind('<Configure>', self._on_window_configure)
         self._schedule_after(120, self._refresh_window_bounds)
         self._schedule_after(_UI_POLL_INTERVAL_MS, self._drain_ui_queue)
+
+        # 构造末显式同步滚动区域：必须在 update_idletasks 之后，
+        # 否则 main_frame.winfo_reqheight() 还是初始 1，纵向滚动条不会出
+        self.root.update_idletasks()
+        self._sync_scroll_region()
 
         # 首次启动自动弹出新手教程（勾选"不再显示"后记忆；
         # ACPRO_NO_TUTORIAL=1 供测试环境禁用）
@@ -167,10 +172,17 @@ class AutoClickerApp:
         self.v_scrollbar.grid(row=0, column=1, sticky="ns")
         self.v_scrollbar.grid_remove()
 
-        # 内容主框架（窗口四周留出呼吸边距）
+        # 内容主框架（窗口四周留出呼吸边距；用 grid_propagate(False) + 显式
+        # width 锁住宽度，避免子控件（最严重的是 action_list 的列表框 + 工具栏
+        # 组合宽度 ~826）把容器撑出画布——之前 settings_panel 被拉到 794 宽，
+        # 文本框全部溢出可视区。高度在 _sync_scroll_region 里手动算并显式
+        # 写入，否则 grid_propagate(False) 会让 reqheight 永远是 1）
         main_frame = ttk.Frame(self.canvas,
                                padding=(PADDING_WINDOW, PADDING_WINDOW,
-                                        PADDING_WINDOW, PADDING_SMALL))
+                                        PADDING_WINDOW, PADDING_SMALL),
+                               width=APP_WIDTH,
+                               height=APP_HEIGHT)
+        main_frame.grid_propagate(False)
         self.main_frame = main_frame
         self._inner_window = self.canvas.create_window(
             (0, 0), window=main_frame, anchor="nw", tags=("inner",))
@@ -259,20 +271,51 @@ class AutoClickerApp:
         # 滚轮：内容区任意控件上滚动均可滑动（列表框保留原生滚动）
         self._bind_mouse_wheel()
 
+        # 滚动区域同步放在 __init__ 末尾（update_idletasks 之后）调用，
+        # 此处 grid 还没排完，main_frame reqheight 还是 1，调了也没用
+
     # ==================== 滚动支持 ====================
 
     def _on_canvas_resize(self, event):
-        """画布尺寸变化 -> 内框宽度跟随 + 重算滚动区域"""
+        """画布尺寸变化 -> 内框宽度跟随 + 重算滚动区域；
+        同时把 main_frame 锁在画布宽度内，避免子控件把容器撑出可视区。
+        纵向滚动条出现/消失会让 canvas 实际宽度变化，所以每次都重新钉一次。"""
         self.canvas.itemconfigure(self._inner_window, width=event.width)
+        # 显式锁定 main_frame 宽度（grid_propagate(False) 防止子控件把它撑大）
+        self.main_frame.configure(width=event.width)
         self._sync_scroll_region()
 
     def _on_inner_resize(self, _event=None):
         """内容尺寸变化 -> 重算滚动区域与滚动条显隐"""
         self._sync_scroll_region()
 
+    def _calc_content_height(self) -> int:
+        """累加所有 grid 子控件的底部 y 坐标得出实际所需高度。
+        grid_propagate(False) 下 winfo_reqheight() 始终是构造时的初始高度，
+        不能用作滚动判断依据——必须从子控件几何反推。"""
+        max_bottom = 0
+        for child in self.main_frame.winfo_children():
+            info = child.grid_info()
+            if not info:
+                continue
+            bottom = child.winfo_y() + child.winfo_height()
+            if bottom > max_bottom:
+                max_bottom = bottom
+        # 加上下内边距
+        pad = self.main_frame.cget("padding")
+        if isinstance(pad, int):
+            pad_bottom = pad
+        elif len(pad) >= 4:
+            pad_bottom = pad[3]
+        else:
+            pad_bottom = 0
+        return max_bottom + pad_bottom
+
     def _sync_scroll_region(self):
-        """内容放不下 -> 显示滚动条；放得下 -> 内框填满画布（列表区吃余量）"""
-        required = self.main_frame.winfo_reqheight()
+        """内容放不下 -> 显示滚动条；放得下 -> 内框填满画布（列表区吃余量）。
+        grid_propagate(False) 下高度不会自动算，所以手动累加子控件底部 + 显式
+        把 main_frame 的 height 写到需求值，scrollregion 才正确反映真实溢出。"""
+        required = self._calc_content_height()
         visible = self.canvas.winfo_height()
         if visible <= 1:
             return  # 首次布局前画布尚无尺寸
@@ -280,10 +323,12 @@ class AutoClickerApp:
             self.v_scrollbar.grid()
             self.canvas.configure(scrollregion=(0, 0, 0, required))
             self.canvas.itemconfigure(self._inner_window, height=required)
+            self.main_frame.configure(height=required)
         else:
             self.v_scrollbar.grid_remove()
             self.canvas.configure(scrollregion=(0, 0, 0, visible))
             self.canvas.itemconfigure(self._inner_window, height=visible)
+            self.main_frame.configure(height=visible)
 
     def _bind_mouse_wheel(self):
         """内容区任意控件上滚轮均滑动画布；列表框跳过（保留原生滚动）"""
@@ -328,32 +373,38 @@ class AutoClickerApp:
         self.library_panel.set_detail(f"{name}：{' · '.join(parts)}")
 
     def _hotkey_hint_text(self) -> str:
-        """根据当前生效的快捷键动态生成提示文案"""
+        """根据当前生效的快捷键动态生成提示文案（紧凑版，避免标题区溢出）"""
         labels = dict(HOTKEY_FIELDS)
         parts = [f"{_display_key(self.hotkeys[action])} {labels[action]}"
                  for action, _ in HOTKEY_FIELDS]
-        return " | ".join(parts)
-    
+        return " · ".join(parts)
+
     def _create_title(self, parent):
         """创建标题与快捷键提示（附新手教程入口）"""
+        # 标题与提示都显式 sticky=nsew，配合 main_frame 列权重让它们真正居中
+        # （默认 sticky 是空串，在 cell 比 widget 大时居中，但在某些 DPI/主题
+        # 组合下会出现"偏右 50px"的诡异位移——显式指定最稳）
         title_label = ttk.Label(
             parent,
             text=f"{APP_NAME}",
             font=(FONT_FAMILY, FONT_SIZE_TITLE, "bold"),
-            foreground=COLOR_PRIMARY
+            foreground=COLOR_PRIMARY,
+            anchor="center"
         )
-        title_label.grid(row=0, column=0, pady=(0, PADDING_SMALL))
+        title_label.grid(row=0, column=0, sticky="ew", pady=(0, PADDING_SMALL))
 
         hint_frame = ttk.Frame(parent)
-        hint_frame.grid(row=1, column=0, pady=(0, PADDING_LARGE))
+        hint_frame.grid(row=1, column=0, sticky="ew", pady=(0, PADDING_LARGE))
+        # 提示框内三段也统一 sticky，使整段始终居中
         self.hotkey_hint_label = ttk.Label(
             hint_frame,
             text=self._hotkey_hint_text(),
             font=(FONT_FAMILY, FONT_SIZE_SMALL),
-            foreground=COLOR_DISABLED
+            foreground=COLOR_DISABLED,
+            anchor="center"
         )
         self.hotkey_hint_label.grid(row=0, column=0)
-        ttk.Label(hint_frame, text="  |  ",
+        ttk.Label(hint_frame, text="  ·  ",
                   font=(FONT_FAMILY, FONT_SIZE_SMALL),
                   foreground=COLOR_DISABLED).grid(row=0, column=1)
         tutorial_link = ttk.Label(
@@ -494,7 +545,9 @@ class AutoClickerApp:
             self._ui_queue.put(func)
     
     def _drain_ui_queue(self, *_args):
-        """在主线程中消费 UI 任务队列"""
+        """在主线程中消费 UI 任务队列；
+        同时把 main_frame 高度跟上内容（grid_propagate(False) 下需手动算，
+        而子控件 grid 完成时间不在 Configure 事件范围内，靠轮询兜底）"""
         while True:
             try:
                 func = self._ui_queue.get_nowait()
@@ -504,6 +557,9 @@ class AutoClickerApp:
                 func()
             except Exception as e:
                 print(f"UI 任务执行失败：{e}")
+
+        # 每轮都同步一次滚动区域（开销可忽略，比 ensure sync 漏触发靠谱）
+        self._sync_scroll_region()
 
         if not self._closing:
             self._schedule_after(_UI_POLL_INTERVAL_MS, self._drain_ui_queue)

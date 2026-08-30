@@ -195,9 +195,9 @@ class SettingsPanel(ttk.LabelFrame):
         var = tk.StringVar(master=self, value=default_value)
         self.variables[var_name] = var
 
-        # 输入框（只允许输入数字）
+        # 输入框（只允许输入数字；sticky=ew 填满列宽，避免标签和输入框之间出现大片空白）
         entry = ttk.Entry(self, textvariable=var)
-        entry.grid(row=row, column=1, sticky=GRID_STICKY_E,
+        entry.grid(row=row, column=1, sticky="ew",
                    pady=PADDING_SMALL, padx=(PADDING_STANDARD, 0))
         # 绑定输入校验：只允许数字和退格键
         var.trace_add('write', lambda *args: self._validate_input(var_name))
