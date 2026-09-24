@@ -306,7 +306,7 @@ class AutoClickerApp:
         if isinstance(pad, int):
             pad_bottom = pad
         elif len(pad) >= 4:
-            pad_bottom = pad[3]
+            pad_bottom = int(str(pad[3]))
         else:
             pad_bottom = 0
         return max_bottom + pad_bottom
