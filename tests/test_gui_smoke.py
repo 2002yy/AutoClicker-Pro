@@ -178,6 +178,14 @@ class TestHotkeySettingsPanel(unittest.TestCase):
         self.assertFalse(ok)
         self.assertIn("重复", msg)
 
+    def test_rejects_equivalent_modifier_aliases(self):
+        _fill_hotkeys(self.panel, toggle='ctrl_l + shift + f9',
+                      panic='ctrl+shift+f9')
+        self.assertEqual(self.panel.get_values()['toggle'], 'ctrl+shift+f9')
+        ok, msg = self.panel.validate()
+        self.assertFalse(ok)
+        self.assertIn("重复", msg)
+
 
 class TestApplyAndEditFlow(unittest.TestCase):
     """应用自定义快捷键 + 动作列表编辑的端到端流程"""

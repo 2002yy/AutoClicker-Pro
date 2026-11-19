@@ -49,6 +49,45 @@ class TestHotkeyManager(unittest.TestCase):
         self.hm._on_press(_make_key("f8"))
         self.assertEqual(called, [1])
 
+    def test_left_right_modifiers_match_user_combo(self):
+        """物理右 Ctrl/左 Shift 必须能触发 UI 的通用组合键。"""
+        hit = threading.Event()
+        self.hm.register_hotkey(" Ctrl + Shift + S ", hit.set)
+        self.hm.start()
+        for name in ("ctrl_r", "shift_l", "s"):
+            self.hm._on_press(_make_key(name))
+        self.assertTrue(hit.wait(1.0), "真实物理侧键应匹配配置中的 ctrl+shift+s")
+
+    def test_releasing_one_ctrl_keeps_other_held(self):
+        """两个物理 Ctrl 同时按下后，松开一侧不能丢失另一侧状态。"""
+        hit = threading.Event()
+        self.hm.register_hotkey("ctrl+s", hit.set)
+        self.hm.start()
+        self.hm._on_press(_make_key("ctrl_l"))
+        self.hm._on_press(_make_key("ctrl_r"))
+        self.hm._on_release(_make_key("ctrl_l"))
+        self.hm._on_press(_make_key("s"))
+        self.assertTrue(hit.wait(1.0))
+
+    def test_unregister_accepts_equivalent_modifier_alias(self):
+        self.hm.register_hotkey("ctrl_l + S", MagicMock())
+        self.assertEqual(self.hm.get_registered_hotkeys(), ["ctrl+s"])
+        self.hm.unregister_hotkey("CTRL_R+s")
+        self.assertEqual(self.hm.get_registered_hotkeys(), [])
+
+    def test_panic_matches_with_other_keys_held(self):
+        """真实场景：按着 Ctrl 时 ESC 急停仍能触发，普通 F8 不应误触发。"""
+        panic = threading.Event()
+        toggle = threading.Event()
+        self.hm.register_hotkey("esc", panic.set, allow_extra_keys=True)
+        self.hm.register_hotkey("f8", toggle.set)
+        self.hm.start()
+        self.hm._on_press(_make_key("ctrl_l"))
+        self.hm._on_press(_make_key("esc"))
+        self.assertTrue(panic.wait(1.0))
+        self.hm._on_press(_make_key("f8"))
+        self.assertFalse(toggle.wait(0.05), "额外修饰键不应触发普通热键")
+
     # ---- 去重（长按防抖）----
 
     def test_long_press_debounce(self):
@@ -164,6 +203,22 @@ class TestHotkeyManagerIntegration(unittest.TestCase):
 
         hm.stop()
         self.assertFalse(hm.is_running())
+
+    def test_panic_bypasses_stalled_tk_queue(self):
+        """急停先终止引擎，不能等主线程下次轮询 UI 任务。"""
+        from ui.app import AutoClickerApp
+
+        app = AutoClickerApp.__new__(AutoClickerApp)
+        app.engine = MagicMock()
+        app.engine.is_recording = True
+        app.engine.is_running = True
+        app._dispatch_to_ui = MagicMock()
+
+        app._hk_panic_stop()
+
+        app.engine.stop_recording.assert_called_once_with()
+        app.engine.stop_clicking.assert_called_once_with()
+        app._dispatch_to_ui.assert_not_called()
 
 
 if __name__ == "__main__":

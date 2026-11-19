@@ -11,6 +11,7 @@ from config.constants import (
     FONT_FAMILY, FONT_SIZE_NORMAL,
     PADDING_SMALL, PADDING_STANDARD,
 )
+from config.validation import normalize_hotkey
 
 # 动作标识 -> 显示名（顺序即界面顺序）
 # 标题栏热键提示会复用这里的 label，挑两字短词以保证标题区不溢出
@@ -84,9 +85,9 @@ class HotkeySettings(ttk.LabelFrame):
                 self.variables[action].set(str(key))
 
     def get_values(self) -> Dict[str, str]:
-        """获取归一化（小写、去空白）后的输入值"""
+        """获取标准键名（去各段空白、左右修饰键归一化）"""
         return {
-            action: var.get().strip().lower()
+            action: normalize_hotkey(var.get())
             for action, var in self.variables.items()
         }
 
