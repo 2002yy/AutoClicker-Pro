@@ -53,6 +53,7 @@ class ClickerEngine:
         self._is_running = False
         self._is_recording = False
         self._lock = threading.Lock()
+        self._click_thread: Optional[threading.Thread] = None
         
         # 录制相关
         self.click_sequence: List[ClickAction] = []
@@ -188,7 +189,7 @@ class ClickerEngine:
     
     def start_clicking(self) -> bool:
         """开始自动点击"""
-        if self.is_running:
+        if self.is_running or (self._click_thread is not None and self._click_thread.is_alive()):
             return False
 
         self.is_running = True
@@ -200,6 +201,7 @@ class ClickerEngine:
         # 在新线程中执行点击
         click_thread = threading.Thread(target=self._execute_clicking)
         click_thread.daemon = True
+        self._click_thread = click_thread
         click_thread.start()
 
         return True
@@ -231,13 +233,28 @@ class ClickerEngine:
             time.sleep(min(0.1, remaining))
         return False
 
+    def _wait_while_running(self, seconds: float, stop_deadline: Optional[float] = None) -> bool:
+        """可中断的宏时间轴等待：停止与限时最长约 50ms 后生效。"""
+        end = time.perf_counter() + max(0.0, seconds)
+        while self.is_running:
+            now = time.perf_counter()
+            if stop_deadline is not None and now >= stop_deadline:
+                return False
+            remaining = end - now
+            if remaining <= 0:
+                return True
+            if stop_deadline is not None:
+                remaining = min(remaining, stop_deadline - now)
+            time.sleep(min(0.05, remaining))
+        return False
+
     def start_simple_clicking(self) -> bool:
         """开始内置连点（无需录制序列，对标商业连点器的核心用法）
 
         按 click_type（单击/双击/三击）在 fixed_position（固定位置）
         或当前光标处连续点击；repeat_count 为点击事件总数，<=0 表示无限。
         """
-        if self.is_running:
+        if self.is_running or (self._click_thread is not None and self._click_thread.is_alive()):
             return False
 
         self.is_running = True
@@ -248,6 +265,7 @@ class ClickerEngine:
 
         click_thread = threading.Thread(target=self._execute_simple_clicking)
         click_thread.daemon = True
+        self._click_thread = click_thread
         click_thread.start()
 
         return True
@@ -287,13 +305,15 @@ class ClickerEngine:
                     self.mouse_controller.press(btn)
                     self.mouse_controller.release(btn)
                     if i < clicks_per_event - 1:
-                        time.sleep(gap_s)
+                        if not self._wait_while_running(gap_s, stop_deadline):
+                            break
 
                 events_done += 1
                 # 还有下一轮（或无限模式）时等待点击间隔
                 more = infinite or events_done < self.repeat_count
                 if more and self.is_running:
-                    time.sleep(max(self.interval_ms, 1) / 1000.0)
+                    if not self._wait_while_running(max(self.interval_ms, 1) / 1000.0, stop_deadline):
+                        break
 
         except Exception as e:
             print(f"连点执行错误：{e}")
@@ -309,6 +329,7 @@ class ClickerEngine:
         - 全零时间戳（旧文件/手工构造）→ 退回固定 interval_ms 间隔回放。
         auto_stop_s > 0 时整个运行限时，到点即停。
         """
+        pending_releases: Dict[int, ClickAction] = {}
         try:
             if not self._wait_start_delay():
                 return
@@ -341,26 +362,57 @@ class ClickerEngine:
                     if use_timestamps:
                         # 对齐到录制时刻；已落后则立即执行，避免误差累积
                         delay = action.timestamp - (time.perf_counter() - start)
-                        if delay > 0:
-                            time.sleep(delay)
+                        if delay > 0 and not self._wait_while_running(delay, stop_deadline):
+                            break
                     elif len(sequence) > 1 and index > 0:
-                        time.sleep(self.interval_ms / 1000.0)
+                        if not self._wait_while_running(self.interval_ms / 1000.0, stop_deadline):
+                            break
 
                     if not self.is_running:
                         break
+                    # 已按下的鼠标/键盘键由后续 release 收尾；用户在间隙
+                    # 按停止时必须兜底释放，不能让系统保留按下状态。
+                    release_index = paired.get(index)
+                    if (release_index is not None and action.action_type == 'press'
+                            and action.kind in ('mouse', 'key')):
+                        pending_releases[release_index] = action
                     self._perform_action(action, paired.get(index))
+                    if action.action_type == 'release':
+                        pending_releases.pop(index, None)
 
                 # 还有下一轮（或无限模式）时等待重复间隔
                 rep += 1
                 more_rounds = self.repeat_count <= 0 or rep < self.repeat_count
                 if more_rounds and self.is_running:
-                    time.sleep(self.repeat_interval / 1000.0)
+                    if not self._wait_while_running(self.repeat_interval / 1000.0, stop_deadline):
+                        break
 
         except Exception as e:
             print(f"点击执行错误：{e}")
 
         finally:
+            for held in reversed(list(pending_releases.values())):
+                self._release_interrupted_action(held)
             self.stop_clicking()
+
+    def _release_interrupted_action(self, action: ClickAction):
+        """取消回放时释放本次宏按下、但未等到配对 release 的输入。"""
+        try:
+            if action.kind == 'key':
+                key = self._resolve_key(action.key)
+                if key is not None:
+                    self.keyboard_controller.release(key)
+            elif action.kind == 'mouse':
+                button = getattr(mouse.Button, action.button, mouse.Button.left)
+                self.mouse_controller.release(button)
+        except Exception as exc:
+            print(f"取消回放时释放输入失败：{exc}")
+        finally:
+            if action.kind == 'mouse' and action.modifiers:
+                try:
+                    self._release_modifiers(action.modifiers)
+                except Exception as exc:
+                    print(f"取消回放时释放修饰键失败：{exc}")
 
     @staticmethod
     def _pair_press_releases(sequence: List[ClickAction]) -> Dict[int, int]:
@@ -452,7 +504,7 @@ class ClickerEngine:
         try:
             self.keyboard_controller.press(trigger)
             if self.hold_duration > 0:
-                time.sleep(self.hold_duration / 1000.0)
+                self._wait_while_running(self.hold_duration / 1000.0)
             self.keyboard_controller.release(trigger)
         finally:
             self._release_modifiers(action.modifiers)
@@ -506,7 +558,7 @@ class ClickerEngine:
                     # 拖拽/按住场景：保持按下状态，等待时间轴上的 release
                     return
                 if self.hold_duration > 0:
-                    time.sleep(self.hold_duration / 1000.0)
+                    self._wait_while_running(self.hold_duration / 1000.0)
                 self.mouse_controller.release(btn)
             finally:
                 if not paired:
@@ -529,7 +581,7 @@ class ClickerEngine:
             if paired:
                 return  # 等待时间轴上的 release 动作
             if self.hold_duration > 0:
-                time.sleep(self.hold_duration / 1000.0)
+                self._wait_while_running(self.hold_duration / 1000.0)
             self.keyboard_controller.release(k)
         elif action.action_type == 'release':
             self.keyboard_controller.release(k)
@@ -896,4 +948,7 @@ class ClickerEngine:
     def cleanup(self):
         """清理资源"""
         self.stop_clicking()
+        if (self._click_thread is not None and self._click_thread.is_alive()
+                and self._click_thread is not threading.current_thread()):
+            self._click_thread.join(timeout=0.5)
         self.stop_recording()
