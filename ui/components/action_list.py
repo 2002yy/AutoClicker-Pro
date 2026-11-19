@@ -266,25 +266,6 @@ class ActionList(ttk.LabelFrame):
             return selection[0]
         return None
     
-    def get_selected_action(self, actions: List[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
-        """
-        获取选中的动作
-        
-        Args:
-            actions: 完整的动作列表
-            
-        Returns:
-            选中的动作字典，如果没有选中或列表为空则返回 None
-        """
-        index = self.get_selected_index()
-        if index is not None and 0 <= index < len(actions):
-            return actions[index]
-        return None
-    
-    def clear(self):
-        """清空列表"""
-        self.listbox.delete(0, tk.END)
-    
     def get_count(self) -> int:
         """
         获取动作数量
@@ -311,12 +292,6 @@ class ActionList(ttk.LabelFrame):
         self.edit_button.config(
             state=tk.NORMAL if enabled else tk.DISABLED)
 
-    def delete_selected(self):
-        """删除选中的项目"""
-        selection = self.listbox.curselection()
-        if selection:
-            self.listbox.delete(selection[0])
-    
     def select_index(self, index: int):
         """
         选中指定索引的项目

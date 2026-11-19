@@ -16,23 +16,16 @@ COLOR_PRIMARY = "#4A90E2"
 COLOR_SUCCESS = "#5CB85C"
 COLOR_WARNING = "#F0AD4E"
 COLOR_DANGER = "#D9534F"
-COLOR_INFO = "#5BC0DE"
-COLOR_LIGHT = "#F8F9FA"
 COLOR_DARK = "#343A40"
-COLOR_WHITE = "#FFFFFF"
-COLOR_BLACK = "#000000"
 COLOR_DISABLED = "#6C757D"
-COLOR_BACKGROUND = "#F5F5F5"
 
 # ==================== 字体配置 ====================
 FONT_FAMILY = "微软雅黑"
 FONT_SIZE_NORMAL = 10
-FONT_SIZE_LARGE = 12
 FONT_SIZE_TITLE = 14
 FONT_SIZE_SMALL = 9
 
 # ==================== 默认设置 ====================
-DEFAULT_MOUSE_BUTTON = 'left'
 DEFAULT_INTERVAL_MS = 100
 DEFAULT_RECORD_INTERVAL = 100
 DEFAULT_HOLD_DURATION = 100
@@ -52,11 +45,6 @@ MULTI_CLICK_GAP_MS = 80       # 同一次双击/三击内部两次按键的间�
 POSITION_MODE_CHOICES = ('跟随光标', '固定位置')
 DEFAULT_POSITION_MODE_LABEL = '跟随光标'
 PICK_COORD_COUNTDOWN_S = 3    # 拾取坐标倒计时秒数
-
-# ==================== 时间单位换算 ====================
-MS_PER_SECOND = 1000
-MS_PER_MINUTE = 60000
-MS_PER_HOUR = 3600000
 
 # ==================== 鼠标轨迹采样（拖拽录制） ====================
 MOVE_MIN_DISTANCE_PX = 5    # 距上次采样点的最小位移，低于此值丢弃
@@ -104,8 +92,6 @@ PADDING_SECTION = 12    # 区块之间的垂直间距
 GRID_STICKY_ALL = "nsew"
 GRID_STICKY_W = "w"
 GRID_STICKY_E = "e"
-GRID_STICKY_N = "n"
-GRID_STICKY_S = "s"
 
 # ==================== 列表框配置 ====================
 LISTBOX_HEIGHT = 10
@@ -113,22 +99,11 @@ LISTBOX_WIDTH = 50
 
 # ==================== 按钮样式 ====================
 STYLE_DANGER = "Danger.TButton"
-STYLE_PRIMARY = "Primary.TButton"
-STYLE_SUCCESS = "Success.TButton"
 
 # ==================== 状态消息 ====================
 STATUS_READY = "就绪"
-STATUS_RUNNING = "正在点击..."
-STATUS_STOPPED = "已停止"
 STATUS_RECORDING = "正在录制鼠标/键盘... 按 ESC 停止"
-STATUS_RECORDING_STOPPED = "录制已停止"
-STATUS_LOADING = "加载中..."
-STATUS_SAVING = "保存中..."
 STATUS_ENCRYPTION_NOTICE = "🔐 加密存储为本地混淆保护，非机密级安全"
 
 # ==================== 错误消息 ====================
-ERROR_INVALID_INPUT = "输入错误"
-ERROR_FILE_NOT_FOUND = "文件未找到"
-ERROR_SAVE_FAILED = "保存失败"
-ERROR_LOAD_FAILED = "加载失败"
 ERROR_VALIDATION_FAILED = "验证失败"

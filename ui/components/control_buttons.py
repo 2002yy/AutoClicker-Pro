@@ -135,10 +135,3 @@ class ControlButtons(ttk.Frame):
         """
         state = tk.NORMAL if enabled else tk.DISABLED
         self.save_button.config(state=state)
-    
-    def reset(self):
-        """重置所有按钮状态"""
-        self.update_recording_state(False)
-        self.update_clicking_state(False)
-        self.enable_click_button(False)
-        self.enable_save_button(False)

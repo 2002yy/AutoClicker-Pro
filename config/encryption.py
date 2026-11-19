@@ -193,21 +193,6 @@ class EncryptionManager:
             encrypted_data = f.read().strip()
         
         return self.decrypt(encrypted_data)
-    
-    def reset_key(self):
-        """重置密钥（会删除旧密钥并生成新密钥）"""
-        key_path = os.path.join(self._key_dir, KEY_FILE)
-        salt_path = os.path.join(self._key_dir, SALT_FILE)
-        
-        # 删除旧文件
-        if os.path.exists(key_path):
-            os.remove(key_path)
-        if os.path.exists(salt_path):
-            os.remove(salt_path)
-        
-        # 重新初始化
-        self._cipher = None
-        self._load_or_create_key()
 
 
 def encrypt_macro(macro_data: List[Dict[str, Any]], filepath: str):
