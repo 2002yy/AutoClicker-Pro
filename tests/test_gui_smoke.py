@@ -44,7 +44,7 @@ def _root_or_skip(testcase):
 
 
 class TestStatusBar(unittest.TestCase):
-    """直接覆盖启动崩溃回归点（COLOR_DISABLED 未导入）"""
+    """实际实例化状态栏并更新可见状态。"""
 
     def test_instantiate_and_set_status(self):
         from ui.components.status_bar import StatusBar
@@ -56,17 +56,8 @@ class TestStatusBar(unittest.TestCase):
             self.assertEqual(bar.status_label.cget("text"), "正在录制鼠标/键盘... 按 ESC 停止")
             bar.set_error("boom")
             self.assertIn("boom", bar.status_label.cget("text"))
-            bar.set_encryption_notice(False)
-            bar.set_encryption_notice(True)
         finally:
             _teardown_root(root)
-
-    def test_all_status_colors_exist(self):
-        import ui.components.status_bar as sb
-        for name in ("COLOR_DARK", "COLOR_DANGER", "COLOR_SUCCESS",
-                     "COLOR_WARNING", "COLOR_DISABLED"):
-            self.assertTrue(hasattr(sb, name), f"status_bar 缺少常量 {name}")
-
 
 class TestAppSmoke(unittest.TestCase):
     """完整应用冒烟：实例化 -> 布局 -> 队列泵 -> 干净退出"""

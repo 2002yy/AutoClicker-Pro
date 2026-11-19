@@ -38,7 +38,7 @@
 ├── tools/
 │   └── capture_docs_screens.py  # 文档截图生成脚本（docs/screenshots/*.png）
 │
-├── tests/                   # 单元测试（165 项：python -m unittest discover tests）
+├── tests/                   # 现役回归测试（python -m unittest discover tests）
 ├── docs/                    # 文档
 │   ├── TUTORIAL.md          # 用户图文教程
 │   ├── PUBLISHING.md        # 发布指南（CI/CD、本地打包、签名与误报）
