@@ -3,6 +3,7 @@
 负责全局快捷键的注册、监听和管理
 """
 
+import queue
 import threading
 from typing import Dict, Callable, Optional, List
 from pynput import keyboard
@@ -19,6 +20,8 @@ class HotkeyManager:
         self._is_running = False
         self._lock = threading.Lock()
         self._pressed_keys: set = set()
+        self._callback_queue: "queue.Queue[Optional[Callable]]" = queue.Queue()
+        self._callback_thread: Optional[threading.Thread] = None
     
     def register_hotkey(self, key_combination: str, callback: Callable,
                         *, allow_extra_keys: bool = False):
@@ -52,17 +55,30 @@ class HotkeyManager:
             
             self._is_running = True
             self._pressed_keys.clear()
-        
-        self._listener = keyboard.Listener(
-            on_press=self._on_press,
-            on_release=self._on_release
+            self._callback_queue = queue.Queue()
+
+        # 单后台工作线程按物理按键事件顺序处理回调，既不阻塞 pynput
+        # 的系统键盘钩子，也不让“启动”和“急停”回调竞争乱序。
+        self._callback_thread = threading.Thread(
+            target=self._run_callbacks, args=(self._callback_queue,), daemon=True
         )
-        self._listener.start()
+        self._callback_thread.start()
+
+        try:
+            self._listener = keyboard.Listener(
+                on_press=self._on_press,
+                on_release=self._on_release
+            )
+            self._listener.start()
+        except Exception:
+            self.stop()
+            raise
     
     def stop(self):
         """停止监听"""
         with self._lock:
             self._is_running = False
+            self._callback_queue.put(None)
         
         if self._listener:
             self._listener.stop()
@@ -121,13 +137,19 @@ class HotkeyManager:
                         and newly_pressed in hotkey.split('+')
                         and frozenset(hotkey.split('+')).issubset(current_keys)))
             ]
+            callback_queue = self._callback_queue
 
         for callback in matched:
-            # 在新线程中执行回调，避免阻塞监听；
-            # 异常在子线程内捕获，避免默认 excepthook 把 traceback 刷进 stderr
-            threading.Thread(
-                target=self._safe_invoke, args=(callback,), daemon=True
-            ).start()
+            callback_queue.put(callback)
+
+    def _run_callbacks(self, callback_queue):
+        """按键事件 FIFO；停止监听后丢弃尚未执行的旧回调。"""
+        while True:
+            callback = callback_queue.get()
+            if callback is None:
+                return
+            if self._is_running:
+                self._safe_invoke(callback)
 
     @staticmethod
     def _safe_invoke(callback: Callable):

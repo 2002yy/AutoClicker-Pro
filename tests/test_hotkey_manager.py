@@ -4,6 +4,7 @@ HotkeyManager 单元测试
 """
 
 import threading
+import time
 import unittest
 from unittest.mock import MagicMock
 
@@ -17,6 +18,14 @@ def _make_key(name: str):
         return getattr(keyboard.Key, name)
     except AttributeError:
         return keyboard.KeyCode(char=name)
+
+
+def _await_count(items: list, expected: int, timeout: float = 1.0) -> list:
+    """热键回调在后台按序执行，断言最终结果而非碰运气抢线程调度。"""
+    deadline = time.perf_counter() + timeout
+    while len(items) < expected and time.perf_counter() < deadline:
+        time.sleep(0.005)
+    return items
 
 
 class TestHotkeyManager(unittest.TestCase):
@@ -47,7 +56,7 @@ class TestHotkeyManager(unittest.TestCase):
         self.hm.register_hotkey("F8", lambda: called.append(1))
         self.hm.start()
         self.hm._on_press(_make_key("f8"))
-        self.assertEqual(called, [1])
+        self.assertEqual(_await_count(called, 1), [1])
 
     def test_left_right_modifiers_match_user_combo(self):
         """物理右 Ctrl/左 Shift 必须能触发 UI 的通用组合键。"""
@@ -88,6 +97,22 @@ class TestHotkeyManager(unittest.TestCase):
         self.hm._on_press(_make_key("f8"))
         self.assertFalse(toggle.wait(0.05), "额外修饰键不应触发普通热键")
 
+    def test_start_and_panic_callbacks_keep_key_event_order(self):
+        observed = []
+        panic_called = threading.Event()
+        self.hm.register_hotkey("f8", lambda: observed.append("start"))
+
+        def panic():
+            observed.append("panic")
+            panic_called.set()
+
+        self.hm.register_hotkey("esc", panic, allow_extra_keys=True)
+        self.hm.start()
+        self.hm._on_press(_make_key("f8"))
+        self.hm._on_press(_make_key("esc"))
+        self.assertTrue(panic_called.wait(1.0))
+        self.assertEqual(observed, ["start", "panic"])
+
     # ---- 去重（长按防抖）----
 
     def test_long_press_debounce(self):
@@ -98,7 +123,7 @@ class TestHotkeyManager(unittest.TestCase):
         key = _make_key("f8")
         self.hm._on_press(key)
         self.hm._on_press(key)  # 第二次应被去重
-        self.assertEqual(called, [1])
+        self.assertEqual(_await_count(called, 1), [1])
 
     def test_release_clears_pressed(self):
         """释放后同一键可以再次触发"""
@@ -109,7 +134,7 @@ class TestHotkeyManager(unittest.TestCase):
         self.hm._on_press(key)
         self.hm._on_release(key)
         self.hm._on_press(key)  # 释放后重按应生效
-        self.assertEqual(called, [1, 1])
+        self.assertEqual(_await_count(called, 2), [1, 1])
 
     # ---- 组合键 ----
 
@@ -120,7 +145,7 @@ class TestHotkeyManager(unittest.TestCase):
         self.hm.start()
         for name in ("ctrl", "shift", "s"):
             self.hm._on_press(_make_key(name))
-        self.assertEqual(called, [1])
+        self.assertEqual(_await_count(called, 1), [1])
 
     def test_combo_order_independent(self):
         """组合键按任意顺序按下都应匹配"""
@@ -129,7 +154,7 @@ class TestHotkeyManager(unittest.TestCase):
         self.hm.start()
         for name in ("f4", "alt", "ctrl"):  # 逆序
             self.hm._on_press(_make_key(name))
-        self.assertEqual(called, [1])
+        self.assertEqual(_await_count(called, 1), [1])
 
     # ---- 单键 ----
 
@@ -139,7 +164,7 @@ class TestHotkeyManager(unittest.TestCase):
         self.hm.register_hotkey("f8", lambda: called.append(1))
         self.hm.start()
         self.hm._on_press(_make_key("f8"))
-        self.assertEqual(called, [1])
+        self.assertEqual(_await_count(called, 1), [1])
 
     # ---- 异常回调隔离 ----
 
@@ -189,7 +214,7 @@ class TestHotkeyManagerIntegration(unittest.TestCase):
         # 触发 F8（按下 + 释放）
         hm._on_press(_make_key("f8"))
         hm._on_release(_make_key("f8"))
-        self.assertEqual(callbacks["f8"], [1])
+        self.assertEqual(_await_count(callbacks["f8"], 1), [1])
         self.assertEqual(callbacks["ctrl+s"], [])
 
         # 触发 Ctrl+S（按下 + 释放）
@@ -199,7 +224,7 @@ class TestHotkeyManagerIntegration(unittest.TestCase):
         hm._on_press(s)
         hm._on_release(ctrl)
         hm._on_release(s)
-        self.assertEqual(callbacks["ctrl+s"], [1])
+        self.assertEqual(_await_count(callbacks["ctrl+s"], 1), [1])
 
         hm.stop()
         self.assertFalse(hm.is_running())
@@ -212,6 +237,7 @@ class TestHotkeyManagerIntegration(unittest.TestCase):
         app.engine = MagicMock()
         app.engine.is_recording = True
         app.engine.is_running = True
+        app._hotkey_epoch = 0
         app._dispatch_to_ui = MagicMock()
 
         app._hk_panic_stop()
@@ -219,6 +245,27 @@ class TestHotkeyManagerIntegration(unittest.TestCase):
         app.engine.stop_recording.assert_called_once_with()
         app.engine.stop_clicking.assert_called_once_with()
         app._dispatch_to_ui.assert_not_called()
+
+    def test_panic_invalidates_queued_start(self):
+        """UI 卡顿时，先到队列的 F8 不能在 Esc 急停之后才启动。"""
+        from ui.app import AutoClickerApp
+
+        app = AutoClickerApp.__new__(AutoClickerApp)
+        app.engine = MagicMock()
+        app.engine.is_recording = False
+        app.engine.is_running = True
+        queued = []
+        app._hotkey_epoch = 0
+        app._dispatch_to_ui = queued.append
+        app._on_click_click = MagicMock()
+
+        app._hk_toggle_clicking()
+        app._hk_panic_stop()
+        for callback in queued:
+            callback()
+
+        app.engine.stop_clicking.assert_called_once_with()
+        app._on_click_click.assert_not_called()
 
 
 if __name__ == "__main__":
