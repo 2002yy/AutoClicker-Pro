@@ -886,6 +886,12 @@ class TestDelayedStartAndAutoStop(unittest.TestCase):
         while engine.is_running and time.perf_counter() < deadline:
             time.sleep(0.01)
 
+    def _wait_for_press(self, fake_mouse, timeout=1.0):
+        deadline = time.perf_counter() + timeout
+        while ('press',) not in fake_mouse.ops and time.perf_counter() < deadline:
+            time.sleep(0.01)
+        self.assertIn(('press',), fake_mouse.ops)
+
     def test_start_delay_waits_before_first_action(self):
         fake_mouse = _FakeMouseController()
         engine = _fresh_engine(fake_mouse, MagicMock())
@@ -937,6 +943,79 @@ class TestDelayedStartAndAutoStop(unittest.TestCase):
         releases = fake_mouse.ops.count(('release',))
         self.assertGreater(presses, 0)
         self.assertEqual(presses, releases)
+
+    def test_panic_during_recorded_gap_releases_held_mouse(self):
+        fake_mouse = _FakeMouseController()
+        engine = _fresh_engine(fake_mouse, MagicMock())
+        engine.click_sequence = [
+            ClickAction(1, 1, 'left', 'press', 0.0),
+            ClickAction(2, 2, 'left', 'release', 10.0),
+        ]
+        engine.update_config(hold_duration=0, repeat_count=1)
+        self.assertTrue(engine.start_clicking())
+        self._wait_for_press(fake_mouse)
+        started = time.perf_counter()
+        engine.stop_clicking()
+        engine._click_thread.join(timeout=1.0)
+        self.assertFalse(engine._click_thread.is_alive(), "停止不应等待十秒后的录制时间戳")
+        self.assertLess(time.perf_counter() - started, 0.8)
+        self.assertEqual(fake_mouse.ops.count(('press',)), 1)
+        self.assertEqual(fake_mouse.ops.count(('release',)), 1, "取消拖拽不能留下按住的鼠标键")
+
+    def test_panic_during_key_hold_releases_held_key(self):
+        keyboard_mock = MagicMock()
+        engine = _fresh_engine(_FakeMouseController(), keyboard_mock)
+        engine.click_sequence = [
+            ClickAction(0, 0, '', 'press', 0.0, kind='key', key='a'),
+            ClickAction(0, 0, '', 'release', 10.0, kind='key', key='a'),
+        ]
+        engine.update_config(hold_duration=0, repeat_count=1)
+        self.assertTrue(engine.start_clicking())
+        deadline = time.perf_counter() + 1.0
+        while not keyboard_mock.press.called and time.perf_counter() < deadline:
+            time.sleep(0.01)
+        self.assertTrue(keyboard_mock.press.called)
+        engine.stop_clicking()
+        engine._click_thread.join(timeout=1.0)
+        self.assertFalse(engine._click_thread.is_alive())
+        self.assertEqual(keyboard_mock.release.call_count, 1, "停止不能留下按住的键盘按键")
+
+    def test_auto_stop_interrupts_recorded_gap(self):
+        fake_mouse = _FakeMouseController()
+        engine = _fresh_engine(fake_mouse, MagicMock())
+        engine.click_sequence = [
+            ClickAction(1, 1, 'left', 'press', 0.0),
+            ClickAction(2, 2, 'left', 'release', 10.0),
+        ]
+        engine.update_config(hold_duration=0, repeat_count=1, auto_stop_s=0.2)
+        self.assertTrue(engine.start_clicking())
+        engine._click_thread.join(timeout=1.0)
+        self.assertFalse(engine._click_thread.is_alive(), "自动停止不能卡在录制时间间隔中")
+        self.assertEqual(fake_mouse.ops.count(('press',)), 1)
+        self.assertEqual(fake_mouse.ops.count(('release',)), 1)
+
+    def test_stop_during_long_simple_interval(self):
+        fake_mouse = _FakeMouseController()
+        engine = _fresh_engine(fake_mouse, MagicMock())
+        engine.update_config(interval_ms=60000, repeat_count=0, hold_duration=0)
+        self.assertTrue(engine.start_simple_clicking())
+        self._wait_for_press(fake_mouse)
+        engine.stop_clicking()
+        engine._click_thread.join(timeout=1.0)
+        self.assertFalse(engine._click_thread.is_alive(), "连点停止不应等待一分钟的间隔")
+        self.assertEqual(fake_mouse.ops.count(('press',)), 1)
+
+    def test_stop_during_unpaired_hold_releases_button(self):
+        fake_mouse = _FakeMouseController()
+        engine = _fresh_engine(fake_mouse, MagicMock())
+        engine.click_sequence = [ClickAction(1, 1, 'left', 'press', 0.0)]
+        engine.update_config(hold_duration=5000, repeat_count=1)
+        self.assertTrue(engine.start_clicking())
+        self._wait_for_press(fake_mouse)
+        engine.stop_clicking()
+        engine._click_thread.join(timeout=1.0)
+        self.assertFalse(engine._click_thread.is_alive(), "停止必须打断五秒按住配置")
+        self.assertEqual(fake_mouse.ops.count(('release',)), 1)
 
 
 class TestInfiniteRepeat(unittest.TestCase):
