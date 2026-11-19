@@ -9,6 +9,26 @@ from .constants import VALIDATION_RULES, ERROR_VALIDATION_FAILED
 # 修饰键前缀（pynput 键名：ctrl / ctrl_l / ctrl_r / alt / alt_gr / shift_l / cmd ...）
 MODIFIER_PREFIXES = ('ctrl', 'alt', 'shift', 'cmd')
 
+# pynput 报告物理侧键，UI 则向用户展示 ctrl/shift/alt/cmd 这类通用键名。
+# 只归一化左右侧变体；AltGr 保留独立语义，避免误触发 Alt 热键。
+_HOTKEY_MODIFIER_ALIASES = {
+    'ctrl_l': 'ctrl', 'ctrl_r': 'ctrl',
+    'shift_l': 'shift', 'shift_r': 'shift',
+    'alt_l': 'alt', 'alt_r': 'alt',
+    'cmd_l': 'cmd', 'cmd_r': 'cmd',
+}
+
+
+def normalize_hotkey_key(name: str) -> str:
+    """将物理键名与用户配置统一成可匹配的通用热键名。"""
+    key = name.strip().lower()
+    return _HOTKEY_MODIFIER_ALIASES.get(key, key)
+
+
+def normalize_hotkey(combination: str) -> str:
+    """规范组合键各段的空格、大小写与左右修饰键写法。"""
+    return '+'.join(normalize_hotkey_key(part) for part in combination.split('+'))
+
 
 def is_modifier_name(name: Any) -> bool:
     """判断规范键名是否为修饰键（供录制器与校验共用）"""

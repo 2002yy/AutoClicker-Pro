@@ -64,6 +64,7 @@ class AutoClickerApp:
     def __init__(self, root: tk.Tk):
         self.root = root
         self._closing = False
+        self._hotkey_epoch = 0  # 急停/重设热键使尚未处理的启动任务失效
         
         # 工作线程 -> 主线程的 UI 任务队列。
         # Tkinter 只能在主线程操作，后台线程一律通过该队列投递。
@@ -463,7 +464,9 @@ class AutoClickerApp:
         manager.register_hotkey(self.hotkeys['toggle'], self._hk_toggle_clicking)
         manager.register_hotkey(self.hotkeys['start_recording'], self._hk_start_recording)
         manager.register_hotkey(self.hotkeys['stop_recording'], self._hk_stop_recording)
-        manager.register_hotkey(self.hotkeys['panic'], self._hk_panic_stop)
+        # 急停允许用户尚按着其他键（例如录制中的 Ctrl/Shift）时触发。
+        manager.register_hotkey(self.hotkeys['panic'], self._hk_panic_stop,
+                                allow_extra_keys=True)
 
         try:
             manager.start()
@@ -489,6 +492,8 @@ class AutoClickerApp:
             return
         self.hotkey_settings.clear_error()
 
+        self._hotkey_epoch += 1
+
         # 停旧监听、按新映射整体重建，避免部分注册的中间状态
         if self.hotkey_manager is not None:
             try:
@@ -507,18 +512,26 @@ class AutoClickerApp:
         else:
             self.status_bar.set_success("快捷键已更新（写入设置文件失败，重启后失效）")
     
-    # 以下 _hk_* 回调在 pynput 监听线程中被调用，必须转投主线程
+    # 普通操作仍投递 Tk 主线程；急停仅调用线程安全的引擎停止方法，
+    # 不等待 UI 队列轮询（引擎自身的状态/文案回调会继续回投主线程）。
     def _hk_toggle_clicking(self):
-        self._dispatch_to_ui(self._on_click_click)
+        epoch = self._hotkey_epoch
+        self._dispatch_to_ui(
+            lambda: self._on_click_click() if epoch == self._hotkey_epoch else None
+        )
     
     def _hk_start_recording(self):
-        self._dispatch_to_ui(self._start_recording_if_idle)
+        epoch = self._hotkey_epoch
+        self._dispatch_to_ui(
+            lambda: self._start_recording_if_idle() if epoch == self._hotkey_epoch else None
+        )
     
     def _hk_stop_recording(self):
         self._dispatch_to_ui(self._stop_recording_if_recording)
     
     def _hk_panic_stop(self):
-        self._dispatch_to_ui(self._panic_stop)
+        self._hotkey_epoch += 1
+        self._panic_stop()
     
     def _start_recording_if_idle(self):
         """如果未在录制则开始录制"""
